@@ -20,10 +20,9 @@ lambda=-1 : Black's turn
 # ])
 board = np.array([[0 for _ in range(8)] for _ in range(8)])
 class Piece:
-    def __init__(self, color, type, capturable=False):
+    def __init__(self, color, type):
         self.color = color
         self.type = type
-        self.capturable = capturable
 
     def what_piece(self):
         return self.color * self.type
