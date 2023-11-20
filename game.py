@@ -1,3 +1,5 @@
+from tabulate import tabulate 
+
 class Game:
     def __init__(self):
         self.tiles = []
@@ -22,32 +24,56 @@ class Game:
             self.get_tile(f'1{col}').occupy(eval(piece)("white"))
             self.get_tile(f'8{col}').occupy(eval(piece)("black"))
 
+        # Storing king positions to later to define is_check function
+        self.white_king_position = '15'
+        self.black_king_position = '85'
+
 
     def print_board(self):
-        for i in range(1,9):
-            row = ''
-            for j in range(1,9):
-                tile = self.get_tile(str(i)+str(j))
+        board = []
+        # column_labels = ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        column_labels = [str(i) for i in range(1,9)]
+        column_labels.insert(0, '')
+        for i in range(1, 9):
+            row = [i]
+            for j in range(1, 9):
+                tile = self.get_tile(str(i) + str(j))
                 if tile.is_occupied():
-                    row += tile.piece.symbol + ' '
+                    row.append(tile.piece.symbol)
                 else:
-                    row += '0 '
-            print(row)
-                
-        #  to get which tiles are occupied
-        # self.pawn = Pawn('purple')
-        # self.get_tile('11').occupy(self.pawn)
-        # self.move(self.pawn, '11', '31')
-        # # self.tiles[].occupy(self.pawn)
-    
+                    row.append(' ')
+            board.append(row)
+
+        board = board[::-1]
+        print(tabulate(board, headers=column_labels, tablefmt='fancy_grid'))
+
+    # Function to check if a king is under threat
+    def track_king(self, color):
+        king_position = self.white_king_position if color == 'white' else self.black_king_position
+        return king_position
+
+    def get_possible_moves(self, color):
+        possible_moves = []
+
+        for row in self.tiles:
+            for tile in row:
+                if tile.is_occupied() and tile.piece.color == color:
+                    piece = tile.piece
+                    for i in range(1, 9):
+                        for j in range(1, 9):
+                            end_tile = self.get_tile(f"{i}{j}")
+                            if piece.move(tile, end_tile, self) and not piece.is_blocked(tile, end_tile, game):
+                                possible_moves.append((tile.position, end_tile.position))
+
+        return possible_moves
+
     def move(self, start, end):
         start = self.get_tile(start)
         end = self.get_tile(end)
         
-        if start.is_occupied() and (not end.is_occupied() or start.piece.color != end.piece.color):
+        if start.is_occupied() and not end.is_occupied():
             piece = start.piece
             if piece.move(start, end, self):
-                self.get_notation(piece, start, end)
                 start.leave()
                 end.occupy(piece)
                 return True
@@ -55,6 +81,7 @@ class Game:
         else:
             return False
         return False  # If the move is invalid
+    
     
     # This function takes the move and converts it into standart notation with the help of coordinate function
     def get_notation(self, piece, start, end):
@@ -79,11 +106,32 @@ class Game:
     def run(self):
         self.setup_board()
         while True:
+            possible_moves = self.get_possible_moves('white')  # Change 'white' to the current player's color
+            print(f"There are {len(possible_moves)} moves. These are: ")
+            for move in possible_moves:
+                print(move)
             user_move = input('Make your move: ')
-            start = user_move.split()[0]
-            end = user_move.split()[1]
-            self.move(start,end)
-            self.print_board()
+            try:
+                if len(user_move.split()) == 2:
+                    start = user_move.split()[0]
+                    end = user_move.split()[1]
+                    if 10 < int(start) <89 and 10 < int(end) <89:
+                        self.move(start,end)
+                        self.print_board()
+                    else:
+                        print('Please enter 2 coordinates between 11-88')
+                        continue
+                elif user_move.lower() == 'resign':
+                    print('Game has ended')
+                    print(self.track_king('white'))
+                    break
+                else:
+                    print('Please enter valid moves')
+                    continue
+            except ValueError:
+                print('Please enter coordinates as numbers')
+                continue
+
 
 class Tile:
     def __init__(self, position) -> None:
@@ -113,6 +161,10 @@ class Piece:
     def move(self, start, end):
         pass
     
+    def get_possible_moves(self, position, game):
+        # Default implementation for pieces that don't move
+        return []
+    
     def __str__(self):
         return f'{self.__class__.__name__}'
 
@@ -139,17 +191,14 @@ class Pawn(Piece):
         if end.position[1] == start.position[1] and \
                 int(end.position[0]) - int(start.position[0]) == 2 * self.direction and \
                 (start.position[0] == '2' or start.position[0] == '7'):
-            # in_between_tile = game.get_tile(str((int(start.position[0])+1)) + start.position[1])
-            # if not in_between_tile.is_occupied() and not end.is_occupied():
             if not self.is_blocked(start, end, game) and not end.is_occupied():
                 self.position = end.position
                 return True
 
         # Check if the pawn captures diagonally
-        if (int(end.position[1]) - int(start.position[1]) == self.direction) or \
-           (int(end.position[1]) - int(start.position[1]) == -self.direction)  and \
+        if abs(int(end.position[1]) - int(start.position[1])) == 1 and \
                 int(end.position[0]) - int(start.position[0]) == self.direction:
-            if end.is_occupied() and end.piece.color != self.color:
+            if end.is_occupied() and not self.is_blocked(start, end, game):
                 end.piece.captured = True
                 end.piece.position = None
                 self.position = end.position
@@ -160,20 +209,24 @@ class Pawn(Piece):
     def is_blocked(self, start, end, game):
         start_row, start_col = int(start.position[0]), int(start.position[1])
         end_row, end_col = int(end.position[0]), int(end.position[1])
-
-        if start_col != end_col:  # Check if there's a piece diagonally
-            if end.is_occupied() and end.piece.color != self.color:
-                return False  # Can capture enemy piece diagonally
+        
+        if end.is_occupied():
+            if end.piece.color == self.color:
+                return True
 
         if start_col == end_col:  # Check for obstruction along the same column
-            increment = 1 if self.color == 'white' else -1
-            current_row = start_row + increment
+            current_row = start_row + self.direction
 
             while current_row != end_row:
                 current_tile = game.get_tile(str(current_row) + str(start_col))
                 if current_tile.is_occupied():
                     return True  # Path is obstructed by another piece
-                current_row += increment
+                current_row += self.direction
+                
+        if abs(start_col - end_col) == 1 and \
+            (end_row - start_row) == self.direction:  # Check if there's a piece diagonally
+            if end.is_occupied():
+                return False  # Can capture enemy piece diagonally
 
         return False  # Path is clear for movement
     
@@ -204,6 +257,10 @@ class Bishop(Piece):
         col_increment = 1 if end_col > start_col else -1
 
         current_row, current_col = start_row + row_increment, start_col + col_increment
+        
+        if end.is_occupied():
+            if end.piece.color == self.color:
+                return True
 
         while current_row != end_row and current_col != end_col:
             current_tile = game.get_tile(str(current_row) + str(current_col))
@@ -234,6 +291,12 @@ class Knight(Piece):
             return True
 
         return False  # Movement didn't match any valid rules
+    def is_blocked(self, start, end, game):
+        if end.is_occupied():
+            if end.piece.color == self.color:
+                return True
+        else:
+            return False
 
 class Rook(Piece):
     def __init__(self, color) -> None:
@@ -256,7 +319,11 @@ class Rook(Piece):
     def is_blocked(self, start, end, game):
         start_row, start_col = int(start.position[0]), int(start.position[1])
         end_row, end_col = int(end.position[0]), int(end.position[1])
-
+        
+        if end.is_occupied():
+            if end.piece.color == self.color:
+                return True
+            
         # Check for obstruction along the same row or column
         if start_row == end_row:  # Same row
             col_increment = 1 if end_col > start_col else -1
@@ -295,7 +362,6 @@ class Queen(Piece):
 
         # Check if the Queen moves diagonally or along a rank or file
         if start_row == end_row or start_col == end_col or row_distance == col_distance:
-            # Implement logic for diagonal or rank/file movement
             if not self.is_blocked(start, end, game):
                 self.position = end.position
                 return True
@@ -311,6 +377,10 @@ class Queen(Piece):
 
         current_row, current_col = start_row + row_increment, start_col + col_increment
 
+        if end.is_occupied():
+            if end.piece.color == self.color:
+                return True
+            
         # Check for obstruction along the same row, column, or diagonal
         while current_row != end_row or current_col != end_col:
             current_tile = game.get_tile(str(current_row) + str(current_col))
@@ -337,15 +407,17 @@ class King(Piece):
         # Check if the King moves within one square in any direction
         if row_diff <= 1 and col_diff <= 1:
             # Implement logic for King's movement
-            if not self.is_blocked(end, game):
+            if not self.is_blocked(start, end, game):
                 self.position = end.position
                 return True
 
         return False  # Movement didn't match any valid rules
 
-    def is_blocked(self, tile, game):
-        # Check if other pieces are threatening the end
-        return False
+    def is_blocked(self, start, end, game):
+        if end.is_occupied:
+            return True
+        else:
+            return False
 
 
 game = Game()
