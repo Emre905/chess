@@ -1,8 +1,18 @@
 from tabulate import tabulate 
+'''current problems: 
+1- 
+
+to add:
+1- castling, en passant, checkmate, promote
+2- all notations
+3- evaluator
+''' 
 
 class Game:
     def __init__(self):
         self.tiles = []
+        self.player = 'white'
+        self.player_opposite = 'black'
         for coll in range(1,9):
             row = []
             for roww in range(1,9):
@@ -29,11 +39,12 @@ class Game:
         self.black_king_position = '85'
 
 
+
     def print_board(self):
         board = []
-        # column_labels = ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
-        column_labels = [str(i) for i in range(1,9)]
-        column_labels.insert(0, '')
+        column_labels = ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+#         column_labels = [str(i) for i in range(1,9)]
+#         column_labels.insert(0, '')
         for i in range(1, 9):
             row = [i]
             for j in range(1, 9):
@@ -46,11 +57,6 @@ class Game:
 
         board = board[::-1]
         print(tabulate(board, headers=column_labels, tablefmt='fancy_grid'))
-
-    # Function to check if a king is under threat
-    def track_king(self, color):
-        king_position = self.white_king_position if color == 'white' else self.black_king_position
-        return king_position
 
     def get_possible_moves(self, color):
         possible_moves = []
@@ -66,31 +72,60 @@ class Game:
                                 possible_moves.append((tile.position, end_tile.position))
 
         return possible_moves
-
+    def get_possible_moves_notation(self,color):
+        possible_moves = self.get_possible_moves(color)
+        possible_moves_notation = []
+        for move in possible_moves:
+            piece = self.get_tile(move[0]).piece
+            notation = self.get_notation(piece, self.get_tile(move[0]), self.get_tile(move[1]))
+            possible_moves_notation.append(notation)
+        return possible_moves_notation
+        
+        
     def move(self, start, end):
         start = self.get_tile(start)
         end = self.get_tile(end)
         
-        if start.is_occupied() and not end.is_occupied():
-            piece = start.piece
-            if piece.move(start, end, self):
-                start.leave()
-                end.occupy(piece)
-                return True
-                
-        else:
+        if not start.is_occupied():
             return False
-        return False  # If the move is invalid
-    
+        
+        elif start.piece.color != self.player: #if the player is not moving his piece
+            print("It's not your piece.")
+            return False
+        
+        piece = start.piece
+        temp_piece = end.piece
+        start.leave()
+        end.occupy(piece)
+        
+        # Checking for check after the move
+        if self.is_check(self.player):
+            print("Illegal move!! Check for threats.")
+            end.leave()
+            start.occupy(piece)  # Revert the move if it puts the player's king in check
+            if temp_piece:
+                end.occupy(temp_piece) # Reverse the captured piece
+            return False
+        if end.piece.symbol == 'K' and end.piece.color == 'white':
+            self.white_king_position = end.position
+        if end.piece.symbol == 'K' and end.piece.color == 'black':
+            self.black_king_position = end.position
+        self.round_count += 1
+        return True
     
     # This function takes the move and converts it into standart notation with the help of coordinate function
     def get_notation(self, piece, start, end):
+        start_new = self.coordinate(start.position)
         end_new = self.coordinate(end.position)
-        if end.is_occupied():
+        if end.is_occupied(): #capturing a piece
             notation = f'{piece.symbol}x{end_new}'
+            if isinstance(piece, Pawn):
+                notation = start_new[0] + notation[1:]
         else:
             notation = f'{piece.symbol}{end_new}'
-        print(notation)
+            if isinstance(piece, Pawn):
+                notation = notation[1:]
+        return notation
 
     # This function is just for converting the column part in end and giving corresponding letter for standart notation
     def coordinate(self, end):
@@ -101,36 +136,58 @@ class Game:
     def get_tile(self, pos):
         r,c = pos[0], pos[1]
         return self.tiles[int(r)-1][int(c)-1]
+    
+    def track_king(self, color):
+        king_position = self.white_king_position if color == 'white' else self.black_king_position
+        return king_position
+    
+    def is_check(self,player):
+        self.player_opposite = 'black' if self.player == 'white' else 'white'
+        possible_moves_opposite = self.get_possible_moves(self.player_opposite)
+        king_position = self.track_king(self.player)
+
+        for idx in possible_moves_opposite:
+            if king_position == idx[1]:
+                return True
+        return False
 
     # This function will run the game according to all other rules
     def run(self):
         self.setup_board()
+        self.round_count = 0
         while True:
-            possible_moves = self.get_possible_moves('white')  # Change 'white' to the current player's color
-            print(f"There are {len(possible_moves)} moves. These are: ")
-            for move in possible_moves:
-                print(move)
+            self.player = 'black' if self.round_count % 2 else 'white'
+            possible_moves = self.get_possible_moves(self.player)
+            possible_moves_notation = self.get_possible_moves_notation(self.player)
+            
+            print(f"There are {len(possible_moves)} moves for {self.player}. These are: ")     
+            for _ in possible_moves_notation: # printing possible moves in standard notation
+                print(_)  
+            self.print_board()
+            if self.is_check(self.player):
+                print('check')
             user_move = input('Make your move: ')
             try:
-                if len(user_move.split()) == 2:
-                    start = user_move.split()[0]
-                    end = user_move.split()[1]
-                    if 10 < int(start) <89 and 10 < int(end) <89:
-                        self.move(start,end)
-                        self.print_board()
+                if user_move in possible_moves_notation:
+                    idx = possible_moves_notation.index(user_move)
+                    self.move(possible_moves[idx][0],possible_moves[idx][1])
+
+                elif len(user_move.split()) == 2:
+                    idx = possible_moves_notation.index(user_move.split())
+                    if idx is not None:
+                        self.move(idx[0], idx[1])
                     else:
-                        print('Please enter 2 coordinates between 11-88')
                         continue
                 elif user_move.lower() == 'resign':
                     print('Game has ended')
-                    print(self.track_king('white'))
                     break
                 else:
-                    print('Please enter valid moves')
+                    print('Please enter 2 coordinates between 11-88')
                     continue
             except ValueError:
-                print('Please enter coordinates as numbers')
+                print('Please enter 2 coordinates between 11-88')
                 continue
+            
 
 
 class Tile:
@@ -162,7 +219,6 @@ class Piece:
         pass
     
     def get_possible_moves(self, position, game):
-        # Default implementation for pieces that don't move
         return []
     
     def __str__(self):
@@ -405,7 +461,7 @@ class King(Piece):
         col_diff = abs(start_col - end_col)
 
         # Check if the King moves within one square in any direction
-        if row_diff <= 1 and col_diff <= 1:
+        if row_diff < 2 and col_diff < 2:
             # Implement logic for King's movement
             if not self.is_blocked(start, end, game):
                 self.position = end.position
@@ -414,11 +470,11 @@ class King(Piece):
         return False  # Movement didn't match any valid rules
 
     def is_blocked(self, start, end, game):
-        if end.is_occupied:
+        if end.is_occupied() and end.piece.color == self.color:
             return True
         else:
             return False
-
+        
 
 game = Game()
 game.run()
