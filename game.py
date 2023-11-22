@@ -1,6 +1,6 @@
 from tabulate import tabulate 
 '''current problems: 
-1- 
+1- when it's check it doesn't allow king to escape but just capture the attacker
 
 to add:
 1- castling, en passant, checkmate, promote
@@ -68,48 +68,83 @@ class Game:
                     for i in range(1, 9):
                         for j in range(1, 9):
                             end_tile = self.get_tile(f"{i}{j}")
-                            if piece.move(tile, end_tile, self) and not piece.is_blocked(tile, end_tile, game):
-                                possible_moves.append((tile.position, end_tile.position))
+                            start_pos = tile.position
+                            end_pos = end_tile.position
+                            if piece.move(tile, end_tile, self):
+                                possible_moves.append((start_pos, end_pos))
 
         return possible_moves
-    def get_possible_moves_notation(self,color):
+    
+    def get_legal_moves(self, color):
         possible_moves = self.get_possible_moves(color)
-        possible_moves_notation = []
+        legal_moves = []
         for move in possible_moves:
+            if self.is_legal_move(move[0], move[1]):
+                legal_moves.append(move)
+
+        return legal_moves
+    
+    def get_legal_moves_notation(self,color):
+        legal_moves = self.get_legal_moves(color)
+        legal_moves_notation = []
+        for move in legal_moves:
             piece = self.get_tile(move[0]).piece
             notation = self.get_notation(piece, self.get_tile(move[0]), self.get_tile(move[1]))
-            possible_moves_notation.append(notation)
-        return possible_moves_notation
+            legal_moves_notation.append(notation)
+        return legal_moves_notation
         
-        
-    def move(self, start, end):
-        start = self.get_tile(start)
-        end = self.get_tile(end)
-        
-        if not start.is_occupied():
-            return False
-        
-        elif start.piece.color != self.player: #if the player is not moving his piece
-            print("It's not your piece.")
-            return False
-        
+    # This function will simulate a move and decide if it's legal
+    def is_legal_move(self, start_pos, end_pos):
+        start = self.get_tile(start_pos)
+        end = self.get_tile(end_pos)
+
         piece = start.piece
         temp_piece = end.piece
+        
+        # Simulate the move
         start.leave()
         end.occupy(piece)
         
-        # Checking for check after the move
-        if self.is_check(self.player):
-            print("Illegal move!! Check for threats.")
-            end.leave()
-            start.occupy(piece)  # Revert the move if it puts the player's king in check
-            if temp_piece:
-                end.occupy(temp_piece) # Reverse the captured piece
+        # Check if the move causes the current player to be in check
+        in_check = self.is_check(piece.color)
+
+        # Revert the move
+        start.occupy(piece)
+        end.occupy(temp_piece)
+
+        return not in_check
+    
+    def is_check(self, player):
+        self.player_opposite = 'black' if self.player == 'white' else 'white'
+        possible_moves_opposite = self.get_possible_moves(self.player_opposite)
+        king_position = self.track_king(self.player)
+
+        for idx in possible_moves_opposite:
+            if king_position == idx[1]:
+                return True
+        return False
+    
+    def move(self, start, end):
+        start_tile = self.get_tile(start)
+        end_tile = self.get_tile(end)
+        
+        if not start_tile.is_occupied():
             return False
-        if end.piece.symbol == 'K' and end.piece.color == 'white':
-            self.white_king_position = end.position
-        if end.piece.symbol == 'K' and end.piece.color == 'black':
-            self.black_king_position = end.position
+                    
+        elif not self.is_legal_move(start, end):
+            print('Illegal move')
+            return False
+        else:
+            piece = start_tile.piece
+            start_tile.leave()
+            end_tile.occupy(piece)
+
+        # Updating position of kings
+        if end_tile.piece is not None:
+            if end_tile.piece.symbol == 'K' and end_tile.piece.color == 'white':
+                self.white_king_position = end_tile.position
+            if end_tile.piece.symbol == 'K' and end_tile.piece.color == 'black':
+                self.black_king_position = end_tile.position
         self.round_count += 1
         return True
     
@@ -117,6 +152,7 @@ class Game:
     def get_notation(self, piece, start, end):
         start_new = self.coordinate(start.position)
         end_new = self.coordinate(end.position)
+
         if end.is_occupied(): #capturing a piece
             notation = f'{piece.symbol}x{end_new}'
             if isinstance(piece, Pawn):
@@ -125,6 +161,7 @@ class Game:
             notation = f'{piece.symbol}{end_new}'
             if isinstance(piece, Pawn):
                 notation = notation[1:]
+
         return notation
 
     # This function is just for converting the column part in end and giving corresponding letter for standart notation
@@ -141,15 +178,6 @@ class Game:
         king_position = self.white_king_position if color == 'white' else self.black_king_position
         return king_position
     
-    def is_check(self,player):
-        self.player_opposite = 'black' if self.player == 'white' else 'white'
-        possible_moves_opposite = self.get_possible_moves(self.player_opposite)
-        king_position = self.track_king(self.player)
-
-        for idx in possible_moves_opposite:
-            if king_position == idx[1]:
-                return True
-        return False
 
     # This function will run the game according to all other rules
     def run(self):
@@ -157,23 +185,23 @@ class Game:
         self.round_count = 0
         while True:
             self.player = 'black' if self.round_count % 2 else 'white'
-            possible_moves = self.get_possible_moves(self.player)
-            possible_moves_notation = self.get_possible_moves_notation(self.player)
+            legal_moves = self.get_legal_moves(self.player)
+            legal_moves_notation = self.get_legal_moves_notation(self.player)
             
-            print(f"There are {len(possible_moves)} moves for {self.player}. These are: ")     
-            for _ in possible_moves_notation: # printing possible moves in standard notation
-                print(_)  
+            print(f"There are {len(legal_moves)} moves for {self.player}. These are: ")     
+            for move in legal_moves_notation: # printing possible moves in standard notation
+                print(move)  
             self.print_board()
             if self.is_check(self.player):
                 print('check')
             user_move = input('Make your move: ')
             try:
-                if user_move in possible_moves_notation:
-                    idx = possible_moves_notation.index(user_move)
-                    self.move(possible_moves[idx][0],possible_moves[idx][1])
+                if user_move in legal_moves_notation:
+                    idx = legal_moves_notation.index(user_move)
+                    self.move(legal_moves[idx][0],legal_moves[idx][1])
 
                 elif len(user_move.split()) == 2:
-                    idx = possible_moves_notation.index(user_move.split())
+                    idx = legal_moves_notation.index(user_move.split())
                     if idx is not None:
                         self.move(idx[0], idx[1])
                     else:
@@ -341,16 +369,15 @@ class Knight(Piece):
         col_diff = abs(start_col - end_col)
 
         # Check if the Knight moves in an L-shape
-        if (row_diff == 2 and col_diff == 1) or (row_diff == 1 and col_diff == 2):
+        if ((row_diff == 2 and col_diff == 1) or (row_diff == 1 and col_diff == 2)) and not self.is_blocked(start, end, game) :
             # Implement logic for Knight's L-shaped movement
             self.position = end.position
             return True
 
         return False  # Movement didn't match any valid rules
     def is_blocked(self, start, end, game):
-        if end.is_occupied():
-            if end.piece.color == self.color:
-                return True
+        if end.is_occupied() and end.piece.color == self.color:
+            return True 
         else:
             return False
 
