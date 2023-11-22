@@ -1,9 +1,10 @@
 from tabulate import tabulate 
 '''current problems: 
-1- when it's check it doesn't allow king to escape but just capture the attacker
+1- when it's check it doesn't allow king to escape. Either a piece has to capture the attacker or king can go to another check square
+2- Promotion for Pawn doesn't work well
 
 to add:
-1- castling, en passant, checkmate, promote
+1- castling, en passant, checkmate
 2- all notations
 3- evaluator
 ''' 
@@ -114,11 +115,13 @@ class Game:
 
         return not in_check
     
+
     def is_check(self, player):
         self.player_opposite = 'black' if self.player == 'white' else 'white'
-        possible_moves_opposite = self.get_possible_moves(self.player_opposite)
+        possible_moves_opposite = self.get_possible_moves(self.player_opposite)  # make possible moves into legal moves without error
         king_position = self.track_king(self.player)
 
+        # If king is in a position that opponent threats
         for idx in possible_moves_opposite:
             if king_position == idx[1]:
                 return True
@@ -177,7 +180,6 @@ class Game:
     def track_king(self, color):
         king_position = self.white_king_position if color == 'white' else self.black_king_position
         return king_position
-    
 
     # This function will run the game according to all other rules
     def run(self):
@@ -190,10 +192,9 @@ class Game:
             
             print(f"There are {len(legal_moves)} moves for {self.player}. These are: ")     
             for move in legal_moves_notation: # printing possible moves in standard notation
-                print(move)  
+                print(move) 
+
             self.print_board()
-            if self.is_check(self.player):
-                print('check')
             user_move = input('Make your move: ')
             try:
                 if user_move in legal_moves_notation:
@@ -256,7 +257,6 @@ class Piece:
 class Pawn(Piece):
     def __init__(self, color) -> None:
         super().__init__(color)
-        # self.attack = False
         self.symbol = 'P'
         if self.color == 'white':
             self.direction = 1
@@ -264,56 +264,61 @@ class Pawn(Piece):
             self.direction = -1
 
     def move(self, start, end, game):
-        # Check if the pawn moves one square forward
-        if end.position[1] == start.position[1] and int(end.position[0]) - int(start.position[0]) == self.direction:
-            # Implement logic for moving one square forward
-            if not end.is_occupied():
-                self.position = end.position
-                return True
+        if not self.is_blocked(start, end, game):
+            # This part is for testing, something is wrong. if part doesnt work, also added piece doesn't work properly
+            # if start.position[0] == '5' and self.color == 'White':  
+            #     # promoted_piece = self.promote(start, end, game)
+            #     # game.get_tile(end.position).occupy(promoted_piece)
+            #     self.position = end.position
+            #     promoted_piece = Knight('Black')
+            #     game.get_tile('35').occupy(promoted_piece)
+                # end.position.piece = promoted_piece
 
-        # Check if the pawn moves two squares forward from the starting row
-        if end.position[1] == start.position[1] and \
-                int(end.position[0]) - int(start.position[0]) == 2 * self.direction and \
-                (start.position[0] == '2' or start.position[0] == '7'):
-            if not self.is_blocked(start, end, game) and not end.is_occupied():
-                self.position = end.position
-                return True
-
-        # Check if the pawn captures diagonally
-        if abs(int(end.position[1]) - int(start.position[1])) == 1 and \
-                int(end.position[0]) - int(start.position[0]) == self.direction:
-            if end.is_occupied() and not self.is_blocked(start, end, game):
-                end.piece.captured = True
-                end.piece.position = None
-                self.position = end.position
-                return True
+            self.position = end.position
+            return True
 
         return False  # Movement didn't match any valid rules
+
     
     def is_blocked(self, start, end, game):
         start_row, start_col = int(start.position[0]), int(start.position[1])
         end_row, end_col = int(end.position[0]), int(end.position[1])
-        
-        if end.is_occupied():
-            if end.piece.color == self.color:
+        row_diff = end_row - start_row
+        col_diff = end_col - start_col
+
+        if not end.is_occupied():
+            if col_diff == 0 and row_diff == self.direction:
+                return False # Can advance 1 move forward
+            
+            if col_diff == 0 and row_diff == 2 * self.direction and start_row in [2, 7]:
+                mid_tile = game.get_tile(str(start_row + 2 * self.direction) + str(start_col))
+                if not mid_tile.is_occupied():
+                    return False # Can advance 2 squares in the beginning
                 return True
-
-        if start_col == end_col:  # Check for obstruction along the same column
-            current_row = start_row + self.direction
-
-            while current_row != end_row:
-                current_tile = game.get_tile(str(current_row) + str(start_col))
-                if current_tile.is_occupied():
-                    return True  # Path is obstructed by another piece
-                current_row += self.direction
-                
-        if abs(start_col - end_col) == 1 and \
-            (end_row - start_row) == self.direction:  # Check if there's a piece diagonally
-            if end.is_occupied():
+        else:
+            if abs(col_diff) == 1 and row_diff == self.direction and self.color != end.piece.color:  # Check if there's a piece diagonally
                 return False  # Can capture enemy piece diagonally
 
-        return False  # Path is clear for movement
-    
+        return True
+        
+    def promote(self, start, end, game):
+        promote_to = input('''Choose which piece you\'d like: 
+                      Queen
+                      Rook
+                      Bishop
+                      Knight: ''')
+        color = start.piece.color
+        if promote_to.lower() == 'queen':
+            return Queen(color)
+        elif promote_to.lower() == 'rook':
+            return Rook(color)
+        elif promote_to.lower() == 'bishop':
+            return Bishop(color)
+        elif promote_to.lower() == 'knight':
+            return Knight(color)
+        else:
+            # self.promote(start, end, game)
+            return Queen(color)
 
 class Bishop(Piece):
     def __init__(self, color) -> None:
