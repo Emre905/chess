@@ -14,9 +14,11 @@ class Game:
         self.player_opposite = 'black'
         self.possible_moves_opposite = self.get_possible_moves(self.player_opposite)
         self.legal_moves_opposite = self.get_legal_moves(self.player_opposite)
-
         self.legal_moves = self.get_legal_moves(self.player)
         self.legal_moves_notation = self.get_legal_moves_notation(self.player)
+
+        self.has_moved = False
+        self.has_castled = False
         for coll in range(1,9):
             row = []
             for roww in range(1,9):
@@ -173,11 +175,12 @@ class Game:
         
     
     def move(self, start, end):
+        # import pdb; pdb.set_trace()
         start_tile = self.get_tile(start)
         end_tile = self.get_tile(end)
         
         # Check if castling is attempted
-        if self.castle(start, end):
+        if self.castle(start, end) and not self.has_castled:
             self.round_count += 1
             return True
 
@@ -275,27 +278,29 @@ class Game:
     def castle(self, start, end):
         start_tile = self.get_tile(start)
         end_tile = self.get_tile(end)
-        
         if isinstance(start_tile.piece, King) and abs(int(start[1]) - int(end[1])) == 2 and start[0] == end[0]:
             # Check conditions for castling
-            if King.is_castle(self, start, end, game):
+            if King.is_castle(self, start_tile, end_tile, game) and not self.has_castled:
             
                 # Move the King
                 king = start_tile.piece
                 start_tile.leave()
                 end_tile.occupy(king)
-
+                
+                # import pdb; pdb.set_trace()
                 # Move the Rook
-                if end[1] == 'g' or end[1] == '7':
-                    rook_start = self.get_tile(f'{end[0]}8')  # Adjust for the Rook's position
-                    rook_end = self.get_tile(f'{end[0]}f')
+                if end[1] == '7':
+                    rook_start_tile = self.get_tile(f'{end[0]}8')  # Adjust for the Rook's position
+                    rook_end_tile = self.get_tile(f'{end[0]}6')
                 else:
-                    rook_start = self.get_tile(f'{end[0]}1')  # Adjust for the Rook's position
-                    rook_end = self.get_tile(f'{end[0]}d')
+                    rook_start_tile = self.get_tile(f'{end[0]}1')  # Adjust for the Rook's position
+                    rook_end_tile = self.get_tile(f'{end[0]}4')
 
-                rook = rook_start.piece
-                rook_start.leave()
-                rook_end.occupy(rook)
+                rook = rook_start_tile.piece
+                rook_start_tile.leave()
+                rook_end_tile.occupy(rook)
+                self.has_castled = True
+                King.has_castled = True
 
             return True
 
@@ -326,6 +331,7 @@ class Game:
             # Printing the board and starting with first move
             self.print_board()
             user_move = input('Make your move: ')
+            # import pdb; pdb.set_trace()
             try:
                 # Checking if the input is given by standard notation
                 if user_move in self.legal_moves_notation:
@@ -613,6 +619,7 @@ class King(Piece):
         super().__init__(color)
         self.symbol = 'K'
         self.has_moved = False
+        self.has_castled = False
 
     def move(self, start, end, game):
         start_row, start_col = int(start.position[0]), int(start.position[1])
@@ -620,7 +627,7 @@ class King(Piece):
 
         row_diff = abs(start_row - end_row)
         col_diff = abs(start_col - end_col)
-
+        
         if self.is_castle(start, end, game):
             return True
 
@@ -639,11 +646,13 @@ class King(Piece):
             return False
         
     # This function will check if the king can castle
-    def is_castle(self, start, end, game):
+    def is_castle(self, start_tile, end_tile, game):
+        # import pdb; pdb.set_trace()
 
-        if not self.has_moved:
-            if abs(int(start.position[1]) - int(end.position[1])) == 2 and start.position[0] == end.position[0]:
-                # self.has_moved = True
+        start = start_tile.position
+        end = end_tile.position
+        if not self.has_moved and not self.has_castled:
+            if abs(int(start[1]) - int(end[1])) == 2 and start[0] == end[0]:
                 return True
         return False
         
