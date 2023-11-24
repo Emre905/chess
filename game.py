@@ -47,13 +47,21 @@ class Game:
         self.black_rook2_position = '88'
 
 
-    def setup_board_test(self):
+    def setup_board_check(self):
         self.get_tile('55').occupy(King('white'))
         self.get_tile('67').occupy(King('black'))
         self.get_tile('68').occupy(Queen('black'))
         self.get_tile('22').occupy(Pawn('white'))
         self.white_king_position = '55'
         self.black_king_position = '67'
+
+    def setup_board_castle(self):
+        self.get_tile('15').occupy(King('white'))
+        self.get_tile('85').occupy(King('black'))
+        self.get_tile('18').occupy(Rook('white'))
+        self.get_tile('11').occupy(Rook('white'))
+        self.white_king_position = '15'
+        self.black_king_position = '85'
 
     def print_board(self):
         board = []
@@ -86,8 +94,7 @@ class Game:
                             start_pos = tile.position
                             end_pos = end_tile.position
                             if piece.move(tile, end_tile, self):
-                                possible_moves.append((start_pos, end_pos))
-
+                                possible_moves.append((start_pos, end_pos))  
         return possible_moves
     
     def get_legal_moves(self, color):
@@ -271,25 +278,24 @@ class Game:
         
         if isinstance(start_tile.piece, King) and abs(int(start[1]) - int(end[1])) == 2 and start[0] == end[0]:
             # Check conditions for castling
+            if King.is_castle(self, start, end, game):
             
+                # Move the King
+                king = start_tile.piece
+                start_tile.leave()
+                end_tile.occupy(king)
 
-            # Perform castling move
-            # Move the King
-            king = start_tile.piece
-            start_tile.leave()
-            end_tile.occupy(king)
+                # Move the Rook
+                if end[1] == 'g' or end[1] == '7':
+                    rook_start = self.get_tile(f'{end[0]}8')  # Adjust for the Rook's position
+                    rook_end = self.get_tile(f'{end[0]}f')
+                else:
+                    rook_start = self.get_tile(f'{end[0]}1')  # Adjust for the Rook's position
+                    rook_end = self.get_tile(f'{end[0]}d')
 
-            # Move the Rook
-            if end[1] == 'g':
-                rook_start = self.get_tile(f'{end[0]}8')  # Adjust for the Rook's position
-                rook_end = self.get_tile(f'{end[0]}f')
-            else:
-                rook_start = self.get_tile(f'{end[0]}1')  # Adjust for the Rook's position
-                rook_end = self.get_tile(f'{end[0]}d')
-
-            rook = rook_start.piece
-            rook_start.leave()
-            rook_end.occupy(rook)
+                rook = rook_start.piece
+                rook_start.leave()
+                rook_end.occupy(rook)
 
             return True
 
@@ -298,8 +304,9 @@ class Game:
 
     # This function will run the game according to all other rules
     def run(self):
-        self.setup_board()
-        # self.setup_board_test()
+        # self.setup_board()
+        # self.setup_board_check()
+        self.setup_board_castle()
         self.round_count = 0
         while True:
             self.player = 'black' if self.round_count % 2 else 'white'
@@ -514,6 +521,7 @@ class Rook(Piece):
             # Implement logic for rank or file movement
             if not self.is_blocked(start, end, game):
                 self.position = end.position
+                self.has_moved = True
                 return True
 
         return False  # Movement didn't match any valid rules
@@ -548,6 +556,12 @@ class Rook(Piece):
                 current_row += row_increment
 
         return False  # Path is clear for movement
+    
+    # This function will check if a rook can castle
+    def is_castle(self, game):
+        if not self.has_moved:
+            return True
+        return False
 
 
 class Queen(Piece):
@@ -607,7 +621,8 @@ class King(Piece):
         row_diff = abs(start_row - end_row)
         col_diff = abs(start_col - end_col)
 
-
+        if self.is_castle(start, end, game):
+            return True
 
         # Check if the King moves within one square in any direction
         if row_diff < 2 and col_diff < 2:
@@ -625,9 +640,10 @@ class King(Piece):
         
     # This function will check if the king can castle
     def is_castle(self, start, end, game):
-        if not self.has_moved and not Rook.has_moved and not end.is_occupied():
-            if abs(int(start.position[1]) - int(end.position[1])) == 2 and start[0] == end[0]:
-                self.has_moved = True
+
+        if not self.has_moved:
+            if abs(int(start.position[1]) - int(end.position[1])) == 2 and start.position[0] == end.position[0]:
+                # self.has_moved = True
                 return True
         return False
         
