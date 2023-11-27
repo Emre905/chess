@@ -1,6 +1,10 @@
 from tabulate import tabulate 
-'''current problems: 
-- en passant and castling is just a sketch, I'll add it
+'''
+current problems: 
+- 
+
+to improve:
+- Castling and en passant returns few outputs, could be better
 
 to add:
 - all notations
@@ -18,7 +22,15 @@ class Game:
         self.legal_moves_notation = self.get_legal_moves_notation(self.player)
 
         self.has_moved = False
-        self.has_castled = False
+        self.white_has_castled = False
+        self.black_has_castled = False
+        self.rook11_has_moved = False
+        self.rook18_has_moved = False
+        self.rook81_has_moved = False
+        self.rook88_has_moved = False
+
+        self.played_moves = [('11','11')]
+
         for coll in range(1,9):
             row = []
             for roww in range(1,9):
@@ -60,8 +72,19 @@ class Game:
     def setup_board_castle(self):
         self.get_tile('15').occupy(King('white'))
         self.get_tile('85').occupy(King('black'))
-        self.get_tile('18').occupy(Rook('white'))
+        self.get_tile('17').occupy(Rook('white'))
         self.get_tile('11').occupy(Rook('white'))
+        self.get_tile('84').occupy(Rook('black'))
+        self.get_tile('88').occupy(Rook('black'))
+        self.white_king_position = '15'
+        self.black_king_position = '85'
+
+    def setup_board_pawn(self):
+        self.get_tile('15').occupy(King('white'))
+        self.get_tile('85').occupy(King('black'))
+        self.get_tile('72').occupy(Pawn('white'))
+        self.get_tile('53').occupy(Pawn('white'))
+        self.get_tile('74').occupy(Pawn('black'))
         self.white_king_position = '15'
         self.black_king_position = '85'
 
@@ -85,7 +108,6 @@ class Game:
 
     def get_possible_moves(self, color):
         possible_moves = []
-
         for row in self.tiles:
             for tile in row:
                 if tile.is_occupied() and tile.piece.color == color:
@@ -96,10 +118,13 @@ class Game:
                             start_pos = tile.position
                             end_pos = end_tile.position
                             if piece.move(tile, end_tile, self):
-                                possible_moves.append((start_pos, end_pos))  
+                                possible_moves.append((start_pos, end_pos))
+                                # print(f"appended move {(start_pos, end_pos)}")
+        # print('Return')
         return possible_moves
     
     def get_legal_moves(self, color):
+
         possible_moves = self.get_possible_moves(color)
         legal_moves = []
         for move in possible_moves:
@@ -120,21 +145,35 @@ class Game:
     def is_legal_move(self, start_pos, end_pos):
         start = self.get_tile(start_pos)
         end = self.get_tile(end_pos)
-        self.player = start.piece.color
 
+        if not start.is_occupied():
+            return False
+        self.player = start.piece.color
         piece = start.piece
         temp_piece = end.piece
+
+        # Check if castling is possible
+        if isinstance(piece, King) and abs(int(start_pos[1]) - int(end_pos[1])) == 2:
+            if not self.castle(start_pos, end_pos)[0]:
+                return False
+
+        # Check if en passant capture is possible
+        elif isinstance(piece, Pawn) and abs(int(start_pos[1]) - int(end_pos[1])) == 1 and not end.is_occupied():
+            if not self.en_passant_capture(start_pos, end_pos):
+                return False
+            
         # Simulate the move
         start.leave()
         end.occupy(piece)
         # If a king has moved the position needs to be updated
+
         if isinstance(piece, King):
             if piece.color == 'white':
                 self.white_king_position = end.position
             if piece.color == 'black':
                 self.black_king_position = end.position
 
-        # Check if such move gives a check
+        # Check if such move gives a check or makes 2 kings touch each other
         in_check = self.is_check(self.player)
         is_kings_kissing = self.is_kings_neighbor()
 
@@ -148,8 +187,9 @@ class Game:
         if isinstance(piece, King):
             if piece.color == 'white':
                 self.white_king_position = start.position
-            if piece.color == 'black':
+            elif piece.color == 'black':
                 self.black_king_position = start.position
+                
         return combined_rule_check
 
     # This function will decide if the player is under check 
@@ -172,29 +212,48 @@ class Game:
             # print(f'kings are here: {king1}, {king2}')
             return True
         return False
-        
     
     def move(self, start, end):
-        # import pdb; pdb.set_trace()
         start_tile = self.get_tile(start)
         end_tile = self.get_tile(end)
-        
-        # Check if castling is attempted
-        if self.castle(start, end) and not self.has_castled:
-            self.round_count += 1
-            return True
-
-        # # Check if en passant capture is possible
-        # self.en_passant_capture(start, end)
+        piece = start_tile.piece
         
         if not start_tile.is_occupied():
             return False
+
+        # Check if castling is attempted
+        if isinstance(start_tile.piece, King) and abs(int(start[1]) - int(end[1])) == 2:
+            if self.castle(start, end)[0]:
+                rook_start_tile, rook_end_tile = self.castle(start, end)[1:3]
+                # Move the King
+                king = start_tile.piece
+                start_tile.leave()
+                end_tile.occupy(king)
+
+                # Move the rooks
+                rook = rook_start_tile.piece
+                rook_start_tile.leave()
+                rook_end_tile.occupy(rook)
+
+                if king.color == 'white':
+                    self.white_has_castled = True
+                if king.color == 'black':
+                    self.black_has_castled = True
+            else:
+                return False
+        
+        # Check if en_passant is attempted
+        elif isinstance(piece, Pawn) and abs(int(start[1]) - int(end[1])) == 1 and not end_tile.is_occupied():
+            if self.en_passant_capture(start, end)[0]:
+                captured_tile = self.en_passant_capture(start, end)[1]
+                start_tile.leave()
+                captured_tile.leave()
+                end_tile.occupy(piece)
                     
         elif not self.is_legal_move(start, end):
             print('Illegal move')
             return False
         else:
-            piece = start_tile.piece
             start_tile.leave()
             end_tile.occupy(piece)
 
@@ -204,9 +263,20 @@ class Game:
                 self.white_king_position = end_tile.position
             if piece.color == 'black':
                 self.black_king_position = end_tile.position
+        
+        # Update position of rooks, if they have moved
+        elif isinstance(piece, Rook):
+            if start == '11':
+                self.rook11_has_moved = True
+            if start == '18':
+                self.rook18_has_moved = True
+            if start == '81':
+                self.rook81_has_moved = True
+            if start == '88':
+                self.rook88_has_moved = True
 
         # Check for pawn promotion
-        if isinstance(piece, Pawn) and (end_tile.position[0] in ('1', '8')) and piece.is_promote:
+        elif isinstance(piece, Pawn) and (end_tile.position[0] in ('1', '8')) and piece.is_promote:
             piece = self.promote_pawn(piece)
             end_tile.occupy(piece)
 
@@ -264,47 +334,65 @@ class Game:
             return Queen(color)
         
     def en_passant_capture(self, start, end):
-        start_tile = self.get_tile(start)
-        end_tile = self.get_tile(end)
 
-        # Check if the move is an en passant capture
-        if isinstance(start_tile.piece, Pawn) and abs(int(start[1]) - int(end[1])) == 1:
-            captured_pawn_pos = f"{start[0]}{end[1]}"  # Get the position of the captured pawn
-
-            # Remove the captured pawn from the board
-            captured_tile = self.get_tile(captured_pawn_pos)
-            captured_tile.leave()
+        previous_move = self.played_moves[-1]
+        prev_start = previous_move[0]
+        prev_end = previous_move[1]
+        captured_tile = self.get_tile(prev_end)
+        captured_pawn = captured_tile.piece
+        # Check if the previous move fits to an en passant move
+        if abs(int(prev_start[0]) - int(prev_end[0])) == 2 and isinstance(captured_pawn, Pawn) and end[1] == prev_end[1]:
+            return True, captured_tile
+        return [False]
+    
 
     def castle(self, start, end):
         start_tile = self.get_tile(start)
         end_tile = self.get_tile(end)
+        
         if isinstance(start_tile.piece, King) and abs(int(start[1]) - int(end[1])) == 2 and start[0] == end[0]:
-            # Check conditions for castling
-            if King.is_castle(self, start_tile, end_tile, game) and not self.has_castled:
+
+            if self.is_check(start_tile.piece.color):
+                return [False]
+            if start_tile.piece.color == 'white' and self.white_has_castled:
+                return [False]
+            elif start_tile.piece.color == 'black' and self.black_has_castled:
+                return [False]
             
-                # Move the King
-                king = start_tile.piece
-                start_tile.leave()
-                end_tile.occupy(king)
-                
-                # import pdb; pdb.set_trace()
-                # Move the Rook
-                if end[1] == '7':
+            self.legal_moves_opposite = self.get_possible_moves(self.player_opposite)  # Better to put this line in a previous function
+            # print(self.legal_moves_opposite)
+            if end[1] == '7':
+                # Check if the corresponding rook has moved
+                if (not self.rook18_has_moved and start_tile.piece.color == 'white') or \
+                (not self.rook88_has_moved and start_tile.piece.color == 'black'):
+                    # Check if the middle squares are under threat
+                    middle_square = self.get_tile(f'{end[0]}6').position
+                    for move in self.legal_moves_opposite:
+                        if move[1] in [middle_square, start, end]:
+                            return [False]
                     rook_start_tile = self.get_tile(f'{end[0]}8')  # Adjust for the Rook's position
                     rook_end_tile = self.get_tile(f'{end[0]}6')
                 else:
+                    return [False]
+
+            elif end[1] == '3':
+                if (not self.rook11_has_moved and start_tile.piece.color == 'white') or \
+                (not self.rook81_has_moved and start_tile.piece.color == 'black'):
+            
+                    # Check if the middle squares are under threat
+                    middle_square = end[0] + '4' 
+                    for move in self.legal_moves_opposite:
+                        if move[1] in [middle_square, start, end]:
+                            return [False]
+                        
                     rook_start_tile = self.get_tile(f'{end[0]}1')  # Adjust for the Rook's position
                     rook_end_tile = self.get_tile(f'{end[0]}4')
+                else:
+                    return [False]
 
-                rook = rook_start_tile.piece
-                rook_start_tile.leave()
-                rook_end_tile.occupy(rook)
-                self.has_castled = True
-                King.has_castled = True
+            return [True, rook_start_tile, rook_end_tile]
 
-            return True
-
-        return False
+        return [False]
         
 
     # This function will run the game according to all other rules
@@ -312,7 +400,9 @@ class Game:
         # self.setup_board()
         # self.setup_board_check()
         self.setup_board_castle()
+        # self.setup_board_pawn()
         self.round_count = 0
+        # self.played_moves = [('11','12')]
         while True:
             self.player = 'black' if self.round_count % 2 else 'white'
             self.legal_moves, self.legal_moves_notation = self.get_legal_moves_notation(self.player)
@@ -325,24 +415,25 @@ class Game:
                 break
 
             print(f"There are {len(self.legal_moves)} moves for {self.player_opposite}. These are: ") # Should be self.player but somehow got reversed
-            print(f"All possible moves are {','.join(self.legal_moves_notation)}") 
+            print(f"All legal moves are {','.join(self.legal_moves_notation)}") 
             print(f"legal opposite moves are {','.join(self.legal_moves_opposite_notation)}")
+            self.print_board()
 
             # Printing the board and starting with first move
-            self.print_board()
             user_move = input('Make your move: ')
-            # import pdb; pdb.set_trace()
             try:
                 # Checking if the input is given by standard notation
                 if user_move in self.legal_moves_notation:
                     idx = self.legal_moves_notation.index(user_move)
                     self.move(self.legal_moves[idx][0],self.legal_moves[idx][1])
+                    self.played_moves.append((self.legal_moves[idx][0],self.legal_moves[idx][1]))
 
                 # Checking if the input is given by coordinates
                 elif len(user_move.split()) == 2:
                     split_move = user_move.split()
                     if (split_move[0], split_move[1]) in self.legal_moves:
                         self.move(split_move[0], split_move[1])
+                        self.played_moves.append((split_move[0], split_move[1]))
         
                 elif user_move.lower() == 'resign':
                     print(f'Game has ended. {self.player} won')
@@ -408,7 +499,6 @@ class Pawn(Piece):
                 (start.position[0] == '2' and end.position[0] == '1' and self.color == 'black'):  
                 self.is_promote = True
 
-            self.position = end.position
             return True
 
         return False  # Movement didn't match any valid rules
@@ -430,18 +520,19 @@ class Pawn(Piece):
                 if not mid_tile.is_occupied():
                     return False # Can advance 2 squares in the beginning
                 return True
+            
+            # Check for en passant
+            if abs(col_diff) == 1 and row_diff == self.direction and not end.is_occupied():
+                if self.direction * start_row in [5, -4]:  # Check if the pawn is at 5th(for white) or 4th(for black) row
+                    print(f'{start.position}{end.position} is_blocked first condition')
+                    if game.en_passant_capture(start.position, end.position):
+                        print(f'{start.position}{end.position} is_blocked 2nd condition. Not is blocked and en_passant true')
+                        return False
+                    return True
         else:
             # Capturing diagonally
             if abs(col_diff) == 1 and row_diff == self.direction and self.color != end.piece.color:
                 return False
-            
-            # # Checking for en passant. Marking such pieces 
-            # if start.position[0] == '2' and end.position[0] == '4' and self.color == 'white':
-            #     self.self.is_en_passant = True
-            #     return False
-            # elif start.position[0] == '7' and end.position[0] == '5' and self.color == 'black':
-            #     self.self.is_en_passant = True
-            #     return False
             return True  # Return True if the move is successful
 
         return True
@@ -627,15 +718,18 @@ class King(Piece):
 
         row_diff = abs(start_row - end_row)
         col_diff = abs(start_col - end_col)
-        
-        if self.is_castle(start, end, game):
-            return True
+
+        if self.is_blocked(start, end, game):
+            return False
+
+        elif abs(int(start.position[1]) - int(end.position[1])) == 2 and start.position[0] == end.position[0]:
+            if self.is_castle(start, end, game):
+                return True
 
         # Check if the King moves within one square in any direction
-        if row_diff < 2 and col_diff < 2:
-            if not self.is_blocked(start, end, game):
-                self.position = end.position
-                return True
+        elif row_diff < 2 and col_diff < 2:
+            self.position = end.position
+            return True
 
         return False  # Movement didn't match any valid rules
 
@@ -646,16 +740,11 @@ class King(Piece):
             return False
         
     # This function will check if the king can castle
+    # add and game.castle(start_tile.position, end_tile.position)
     def is_castle(self, start_tile, end_tile, game):
-        # import pdb; pdb.set_trace()
-
-        start = start_tile.position
-        end = end_tile.position
-        if not self.has_moved and not self.has_castled:
-            if abs(int(start[1]) - int(end[1])) == 2 and start[0] == end[0]:
-                return True
+        if not self.has_moved :
+            return True
         return False
-        
 
 game = Game()
 game.run()
