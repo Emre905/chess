@@ -1,10 +1,13 @@
 from tabulate import tabulate 
 '''
 current problems: 
-- 
+- is_check doesn't work well to print if it's check in that position
+- legal moves shows king can go 2 moves sideways even if it illegal
+- check why the line 'self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)[1]' swaps colors
 
 to improve:
 - Castling and en passant returns few outputs, could be better
+- Fix overlapping parts in piece is_blocked and move functions
 
 to add:
 - all notations
@@ -91,8 +94,7 @@ class Game:
     def print_board(self):
         board = []
         column_labels = ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
-#         column_labels = [str(i) for i in range(1,9)]
-#         column_labels.insert(0, '')
+#         column_labels = [' '] + [str(i) for i in range(1,9)]
         for i in range(1, 9):
             row = [i]
             for j in range(1, 9):
@@ -159,7 +161,7 @@ class Game:
 
         # Check if en passant capture is possible
         elif isinstance(piece, Pawn) and abs(int(start_pos[1]) - int(end_pos[1])) == 1 and not end.is_occupied():
-            if not self.en_passant_capture(start_pos, end_pos):
+            if not self.en_passant_capture(start_pos, end_pos)[0]:
                 return False
             
         # Simulate the move
@@ -296,6 +298,8 @@ class Game:
             notation = f'{piece.symbol}{end_new}'
             if isinstance(piece, Pawn):
                 notation = notation[1:]
+                if start_new[0] != end_new[0]: # If the move was en passant
+                    notation = f'{start_new[0]}x{end_new}'
 
         return notation
 
@@ -341,7 +345,7 @@ class Game:
         captured_tile = self.get_tile(prev_end)
         captured_pawn = captured_tile.piece
         # Check if the previous move fits to an en passant move
-        if abs(int(prev_start[0]) - int(prev_end[0])) == 2 and isinstance(captured_pawn, Pawn) and end[1] == prev_end[1]:
+        if isinstance(captured_pawn, Pawn) and abs(int(prev_start[0]) - int(prev_end[0])) == 2 and end[1] == prev_end[1]:
             return True, captured_tile
         return [False]
     
@@ -393,34 +397,49 @@ class Game:
             return [True, rook_start_tile, rook_end_tile]
 
         return [False]
-        
+    
+    # This function will do the first print statements and get the user input to make the run function shorter
+    def handle_setup():
+        pass
 
     # This function will run the game according to all other rules
     def run(self):
-        # self.setup_board()
+        self.setup_board()
         # self.setup_board_check()
-        self.setup_board_castle()
+        # self.setup_board_castle()
         # self.setup_board_pawn()
         self.round_count = 0
-        # self.played_moves = [('11','12')]
+ 
         while True:
             self.player = 'black' if self.round_count % 2 else 'white'
             self.legal_moves, self.legal_moves_notation = self.get_legal_moves_notation(self.player)
             self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)[1]
-
             # if it's checkmate (there are no legal moves), the game ends
             if len(self.legal_moves) == 0:
                 self.print_board()
                 print(f'Checkmate! {self.player} player won')
                 break
 
+            # if it's check, print it   !! doesn't work
+            if self.is_check(self.player):
+                print('Check!')
+            if self.is_check(self.player_opposite):
+                print('Check! check')
+
+
             print(f"There are {len(self.legal_moves)} moves for {self.player_opposite}. These are: ") # Should be self.player but somehow got reversed
             print(f"All legal moves are {','.join(self.legal_moves_notation)}") 
             print(f"legal opposite moves are {','.join(self.legal_moves_opposite_notation)}")
-            self.print_board()
 
             # Printing the board and starting with first move
-            user_move = input('Make your move: ')
+            self.print_board()
+            user_move = input('Make your move: ').strip().upper()
+            for idx, character in enumerate(user_move):
+                if character == 'X':
+                    notation = list(user_move)
+                    # Replace X with x
+                    notation[idx] = 'x'
+                    user_move = ''.join(notation)
             try:
                 # Checking if the input is given by standard notation
                 if user_move in self.legal_moves_notation:
@@ -442,6 +461,7 @@ class Game:
                 else:
                     print('Please enter 2 coordinates between 11-88')
                     continue
+
             except ValueError:
                 print('Please enter 2 coordinates between 11-88')
                 continue
@@ -491,12 +511,12 @@ class Pawn(Piece):
         self.is_en_passant = False
         self.direction = 1 if self.color == 'white' else -1
 
-    def move(self, start, end, game):
-        if not self.is_blocked(start, end, game):
+    def move(self, start_tile, end_tile, game):
+        if not self.is_blocked(start_tile, end_tile, game):
 
             # This part is for promoting a Pawn
-            if (start.position[0] == '7' and end.position[0] == '8' and self.color == 'white') or \
-                (start.position[0] == '2' and end.position[0] == '1' and self.color == 'black'):  
+            if (start_tile.position[0] == '7' and end_tile.position[0] == '8' and self.color == 'white') or \
+                (start_tile.position[0] == '2' and end_tile.position[0] == '1' and self.color == 'black'):  
                 self.is_promote = True
 
             return True
@@ -504,13 +524,13 @@ class Pawn(Piece):
         return False  # Movement didn't match any valid rules
 
     
-    def is_blocked(self, start, end, game):
-        start_row, start_col = int(start.position[0]), int(start.position[1])
-        end_row, end_col = int(end.position[0]), int(end.position[1])
+    def is_blocked(self, start_tile, end_tile, game):
+        start_row, start_col = int(start_tile.position[0]), int(start_tile.position[1])
+        end_row, end_col = int(end_tile.position[0]), int(end_tile.position[1])
         row_diff = end_row - start_row
         col_diff = end_col - start_col
 
-        if not end.is_occupied():
+        if not end_tile.is_occupied():
             # Moving one square
             if col_diff == 0 and row_diff == self.direction:
                 return False # Can advance 1 move forward
@@ -522,16 +542,14 @@ class Pawn(Piece):
                 return True
             
             # Check for en passant
-            if abs(col_diff) == 1 and row_diff == self.direction and not end.is_occupied():
+            if abs(col_diff) == 1 and row_diff == self.direction and not end_tile.is_occupied():
                 if self.direction * start_row in [5, -4]:  # Check if the pawn is at 5th(for white) or 4th(for black) row
-                    print(f'{start.position}{end.position} is_blocked first condition')
-                    if game.en_passant_capture(start.position, end.position):
-                        print(f'{start.position}{end.position} is_blocked 2nd condition. Not is blocked and en_passant true')
+                    if game.en_passant_capture(start_tile.position, end_tile.position):
                         return False
                     return True
         else:
             # Capturing diagonally
-            if abs(col_diff) == 1 and row_diff == self.direction and self.color != end.piece.color:
+            if abs(col_diff) == 1 and row_diff == self.direction and self.color != end_tile.piece.color:
                 return False
             return True  # Return True if the move is successful
 
@@ -542,30 +560,30 @@ class Bishop(Piece):
         super().__init__(color)
         self.symbol = 'B'
 
-    def move(self, start, end, game):
-        row_distance = abs(int(end.position[0]) - int(start.position[0]))
-        col_distance = abs(int(end.position[1]) - int(start.position[1]))
+    def move(self, start_tile, end_tile, game):
+        row_distance = abs(int(end_tile.position[0]) - int(start_tile.position[0]))
+        col_distance = abs(int(end_tile.position[1]) - int(start_tile.position[1]))
 
         # Check if the Bishop moves diagonally
         if row_distance == col_distance:
             # Implement logic for diagonal movement
-            if not self.is_blocked(start, end, game):
-                self.position = end.position
+            if not self.is_blocked(start_tile, end_tile, game):
+                self.position = end_tile.position
                 return True
 
         return False  # Movement didn't match any valid rules
 
-    def is_blocked(self, start, end, game):
-        start_row, start_col = int(start.position[0]), int(start.position[1])
-        end_row, end_col = int(end.position[0]), int(end.position[1])
+    def is_blocked(self, start_tile, end_tile, game):
+        start_row, start_col = int(start_tile.position[0]), int(start_tile.position[1])
+        end_row, end_col = int(end_tile.position[0]), int(end_tile.position[1])
 
         row_increment = 1 if end_row > start_row else -1
         col_increment = 1 if end_col > start_col else -1
 
         current_row, current_col = start_row + row_increment, start_col + col_increment
         
-        if end.is_occupied():
-            if end.piece.color == self.color:
+        if end_tile.is_occupied():
+            if end_tile.piece.color == self.color:
                 return True
 
         while current_row != end_row and current_col != end_col:
@@ -583,22 +601,22 @@ class Knight(Piece):
         super().__init__(color)
         self.symbol = 'N'
 
-    def move(self, start, end, game):
-        start_row, start_col = int(start.position[0]), int(start.position[1])
-        end_row, end_col = int(end.position[0]), int(end.position[1])
+    def move(self, start_tile, end_tile, game):
+        start_row, start_col = int(start_tile.position[0]), int(start_tile.position[1])
+        end_row, end_col = int(end_tile.position[0]), int(end_tile.position[1])
 
         row_diff = abs(start_row - end_row)
         col_diff = abs(start_col - end_col)
 
         # Check if the Knight moves in an L-shape
-        if ((row_diff == 2 and col_diff == 1) or (row_diff == 1 and col_diff == 2)) and not self.is_blocked(start, end, game) :
+        if ((row_diff == 2 and col_diff == 1) or (row_diff == 1 and col_diff == 2)) and not self.is_blocked(start_tile, end_tile, game) :
             # Implement logic for Knight's L-shaped movement
-            self.position = end.position
+            self.position = end_tile.position
             return True
 
         return False  # Movement didn't match any valid rules
-    def is_blocked(self, start, end, game):
-        if end.is_occupied() and end.piece.color == self.color:
+    def is_blocked(self, start_tile, end_tile, game):
+        if end_tile.is_occupied() and end_tile.piece.color == self.color:
             return True 
         else:
             return False
@@ -609,26 +627,26 @@ class Rook(Piece):
         self.symbol = 'R'
         self.has_moved = False
 
-    def move(self, start, end, game):
-        start_row, start_col = int(start.position[0]), int(start.position[1])
-        end_row, end_col = int(end.position[0]), int(end.position[1])
+    def move(self, start_tile, end_tile, game):
+        start_row, start_col = int(start_tile.position[0]), int(start_tile.position[1])
+        end_row, end_col = int(end_tile.position[0]), int(end_tile.position[1])
 
         # Check if the Rook moves along a rank (row) or file (column)
         if start_row == end_row or start_col == end_col:
             # Implement logic for rank or file movement
-            if not self.is_blocked(start, end, game):
-                self.position = end.position
+            if not self.is_blocked(start_tile, end_tile, game):
+                self.position = end_tile.position
                 self.has_moved = True
                 return True
 
         return False  # Movement didn't match any valid rules
 
-    def is_blocked(self, start, end, game):
-        start_row, start_col = int(start.position[0]), int(start.position[1])
-        end_row, end_col = int(end.position[0]), int(end.position[1])
+    def is_blocked(self, start_tile, end_tile, game):
+        start_row, start_col = int(start_tile.position[0]), int(start_tile.position[1])
+        end_row, end_col = int(end_tile.position[0]), int(end_tile.position[1])
         
-        if end.is_occupied():
-            if end.piece.color == self.color:
+        if end_tile.is_occupied():
+            if end_tile.piece.color == self.color:
                 return True
             
         # Check for obstruction along the same row or column
@@ -666,32 +684,32 @@ class Queen(Piece):
         super().__init__(color)
         self.symbol = 'Q'
 
-    def move(self, start, end, game):
-        start_row, start_col = int(start.position[0]), int(start.position[1])
-        end_row, end_col = int(end.position[0]), int(end.position[1])
+    def move(self, start_tile, end_tile, game):
+        start_row, start_col = int(start_tile.position[0]), int(start_tile.position[1])
+        end_row, end_col = int(end_tile.position[0]), int(end_tile.position[1])
 
         row_distance = abs(start_row - end_row)
         col_distance = abs(start_col - end_col)
 
         # Check if the Queen moves diagonally or along a rank or file
         if start_row == end_row or start_col == end_col or row_distance == col_distance:
-            if not self.is_blocked(start, end, game):
-                self.position = end.position
+            if not self.is_blocked(start_tile, end_tile, game):
+                self.position = end_tile.position
                 return True
 
         return False  # Movement didn't match any valid rules
 
-    def is_blocked(self, start, end, game):
-        start_row, start_col = int(start.position[0]), int(start.position[1])
-        end_row, end_col = int(end.position[0]), int(end.position[1])
+    def is_blocked(self, start_tile, end_tile, game):
+        start_row, start_col = int(start_tile.position[0]), int(start_tile.position[1])
+        end_row, end_col = int(end_tile.position[0]), int(end_tile.position[1])
 
         row_increment = 1 if end_row > start_row else -1 if end_row < start_row else 0
         col_increment = 1 if end_col > start_col else -1 if end_col < start_col else 0
 
         current_row, current_col = start_row + row_increment, start_col + col_increment
 
-        if end.is_occupied():
-            if end.piece.color == self.color:
+        if end_tile.is_occupied():
+            if end_tile.piece.color == self.color:
                 return True
             
         # Check for obstruction along the same row, column, or diagonal
@@ -712,29 +730,29 @@ class King(Piece):
         self.has_moved = False
         self.has_castled = False
 
-    def move(self, start, end, game):
-        start_row, start_col = int(start.position[0]), int(start.position[1])
-        end_row, end_col = int(end.position[0]), int(end.position[1])
+    def move(self, start_tile, end_tile, game):
+        start_row, start_col = int(start_tile.position[0]), int(start_tile.position[1])
+        end_row, end_col = int(end_tile.position[0]), int(end_tile.position[1])
 
         row_diff = abs(start_row - end_row)
         col_diff = abs(start_col - end_col)
 
-        if self.is_blocked(start, end, game):
+        if self.is_blocked(start_tile, end_tile, game):
             return False
 
-        elif abs(int(start.position[1]) - int(end.position[1])) == 2 and start.position[0] == end.position[0]:
-            if self.is_castle(start, end, game):
+        elif abs(int(start_tile.position[1]) - int(end_tile.position[1])) == 2 and start_tile.position[0] == end_tile.position[0]:
+            if self.is_castle(start_tile, end_tile, game):
                 return True
 
         # Check if the King moves within one square in any direction
         elif row_diff < 2 and col_diff < 2:
-            self.position = end.position
+            self.position = end_tile.position
             return True
 
         return False  # Movement didn't match any valid rules
 
-    def is_blocked(self, start, end, game):
-        if end.is_occupied() and end.piece.color == self.color:
+    def is_blocked(self, start_tile, end_tile, game):
+        if end_tile.is_occupied() and end_tile.piece.color == self.color:
             return True
         else:
             return False
