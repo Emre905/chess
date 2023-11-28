@@ -1,13 +1,12 @@
 from tabulate import tabulate 
 '''
 current problems: 
-- is_check doesn't work well to print if it's check in that position
-- legal moves shows king can go 2 moves sideways even if it illegal
-- check why the line 'self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)[1]' swaps colors
+- check why the line 'self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)[1]' swaps colors (not a big issue)
 
 to improve:
 - Castling and en passant returns few outputs, could be better
 - Fix overlapping parts in piece is_blocked and move functions
+- is_check doesn't work to print if it's check in that position. made is_check_test to fix it but can be a better solution
 
 to add:
 - all notations
@@ -108,11 +107,11 @@ class Game:
         board = board[::-1]
         print(tabulate(board, headers=column_labels, tablefmt='fancy_grid'))
 
-    def get_possible_moves(self, color):
+    def get_possible_moves(self, player):
         possible_moves = []
         for row in self.tiles:
             for tile in row:
-                if tile.is_occupied() and tile.piece.color == color:
+                if tile.is_occupied() and tile.piece.color == player:
                     piece = tile.piece
                     for i in range(1, 9):
                         for j in range(1, 9):
@@ -121,27 +120,24 @@ class Game:
                             end_pos = end_tile.position
                             if piece.move(tile, end_tile, self):
                                 possible_moves.append((start_pos, end_pos))
-                                # print(f"appended move {(start_pos, end_pos)}")
-        # print('Return')
         return possible_moves
     
-    def get_legal_moves(self, color):
-
-        possible_moves = self.get_possible_moves(color)
+    def get_legal_moves(self, player):
+        possible_moves = self.get_possible_moves(player)
         legal_moves = []
         for move in possible_moves:
             if self.is_legal_move(move[0], move[1]):
                 legal_moves.append(move)
         return legal_moves
     
-    def get_legal_moves_notation(self,color):
-        legal_moves = self.get_legal_moves(color)
+    def get_legal_moves_notation(self, player):
+        legal_moves = self.get_legal_moves(player)
         legal_moves_notation = []
         for move in legal_moves:
             piece = self.get_tile(move[0]).piece
             notation = self.get_notation(piece, self.get_tile(move[0]), self.get_tile(move[1]))
             legal_moves_notation.append(notation)
-        return legal_moves, legal_moves_notation
+        return legal_moves_notation
         
     # This function will simulate a move and decide if it's legal. I put is_check function inside this function to avoid recursions
     def is_legal_move(self, start_pos, end_pos):
@@ -201,6 +197,16 @@ class Game:
         king_position = self.track_king(self.player)[0]
         # If king is in a position that opponent threats
         for idx in possible_moves_opposite: # Try to make this self and remove upper line
+            if king_position == idx[1]:
+                return True
+        return False
+    
+    def is_check_test(self, player):
+        self.player_opposite = 'black' if self.player == 'white' else 'white'
+        possible_moves = self.get_possible_moves(self.player)
+        king_position = self.track_king(self.player_opposite)[0]
+        # If king is in a position that opponent threats
+        for idx in possible_moves: # Try to make this self and remove upper line
             if king_position == idx[1]:
                 return True
         return False
@@ -370,7 +376,10 @@ class Game:
                 if (not self.rook18_has_moved and start_tile.piece.color == 'white') or \
                 (not self.rook88_has_moved and start_tile.piece.color == 'black'):
                     # Check if the middle squares are under threat
-                    middle_square = self.get_tile(f'{end[0]}6').position
+                    middle_tile = self.get_tile(f'{end[0]}6')
+                    middle_square = middle_tile.position
+                    if middle_tile.is_occupied():
+                        return [False]
                     for move in self.legal_moves_opposite:
                         if move[1] in [middle_square, start, end]:
                             return [False]
@@ -384,7 +393,10 @@ class Game:
                 (not self.rook81_has_moved and start_tile.piece.color == 'black'):
             
                     # Check if the middle squares are under threat
-                    middle_square = end[0] + '4' 
+                    middle_tile = self.get_tile(end[0] + '4')
+                    middle_square = middle_tile.position 
+                    if middle_tile.is_occupied():
+                        return [False]
                     for move in self.legal_moves_opposite:
                         if move[1] in [middle_square, start, end]:
                             return [False]
@@ -412,27 +424,29 @@ class Game:
  
         while True:
             self.player = 'black' if self.round_count % 2 else 'white'
-            self.legal_moves, self.legal_moves_notation = self.get_legal_moves_notation(self.player)
-            self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)[1]
-            # if it's checkmate (there are no legal moves), the game ends
-            if len(self.legal_moves) == 0:
-                self.print_board()
-                print(f'Checkmate! {self.player} player won')
-                break
+            self.legal_moves = self.get_legal_moves(self.player)
+            self.legal_moves_notation = self.get_legal_moves_notation(self.player)
 
-            # if it's check, print it   !! doesn't work
-            if self.is_check(self.player):
-                print('Check!')
-            if self.is_check(self.player_opposite):
-                print('Check! check')
+            # for some reasons this function swaps white and black. So I put it twice
+            self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)
+            self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)
 
-
-            print(f"There are {len(self.legal_moves)} moves for {self.player_opposite}. These are: ") # Should be self.player but somehow got reversed
+            print(f"There are {len(self.legal_moves)} moves for {self.player}. These are: ") # Should be self.player but somehow got reversed
             print(f"All legal moves are {','.join(self.legal_moves_notation)}") 
             print(f"legal opposite moves are {','.join(self.legal_moves_opposite_notation)}")
 
             # Printing the board and starting with first move
             self.print_board()
+
+            # if it's checkmate (there are no legal moves), the game ends
+            if len(self.legal_moves) == 0:
+                print(f'Checkmate! {self.player_opposite} player won')
+                break
+
+            # if it's check, print it
+            if self.is_check_test(self.player_opposite):
+                print('Check!')
+
             user_move = input('Make your move: ').strip().upper()
             for idx, character in enumerate(user_move):
                 if character == 'X':
@@ -455,7 +469,7 @@ class Game:
                         self.played_moves.append((split_move[0], split_move[1]))
         
                 elif user_move.lower() == 'resign':
-                    print(f'Game has ended. {self.player} won')
+                    print(f'Game has ended. {self.player_opposite} won')
                     break
 
                 else:
@@ -536,7 +550,7 @@ class Pawn(Piece):
                 return False # Can advance 1 move forward
             # Moving two square
             if col_diff == 0 and row_diff == 2 * self.direction and start_row in [2, 7]:
-                mid_tile = game.get_tile(str(start_row + 2 * self.direction) + str(start_col))
+                mid_tile = game.get_tile(str(start_row + self.direction) + str(start_col))
                 if not mid_tile.is_occupied():
                     return False # Can advance 2 squares in the beginning
                 return True
