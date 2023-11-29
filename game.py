@@ -416,9 +416,9 @@ class Game:
 
     # This function will run the game according to all other rules
     def run(self):
-        self.setup_board()
+        # self.setup_board()
         # self.setup_board_check()
-        # self.setup_board_castle()
+        self.setup_board_castle()
         # self.setup_board_pawn()
         self.round_count = 0
  
@@ -427,9 +427,9 @@ class Game:
             self.legal_moves = self.get_legal_moves(self.player)
             self.legal_moves_notation = self.get_legal_moves_notation(self.player)
 
-            # for some reasons this function swaps white and black. So I put it twice
+            # for some reasons this function swaps white and black.
             self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)
-            self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)
+            self.player = 'black' if self.round_count % 2 else 'white'
 
             print(f"There are {len(self.legal_moves)} moves for {self.player}. These are: ") # Should be self.player but somehow got reversed
             print(f"All legal moves are {','.join(self.legal_moves_notation)}") 
@@ -438,13 +438,18 @@ class Game:
             # Printing the board and starting with first move
             self.print_board()
 
-            # if it's checkmate (there are no legal moves), the game ends
+            # if it's checkmate or stalemate (there are no legal moves), the game ends
             if len(self.legal_moves) == 0:
-                print(f'Checkmate! {self.player_opposite} player won')
+                if self.is_check(self.player):
+                    print(f'Checkmate! {self.player_opposite} player won')
+                else:
+                    print('Stelamete! The game is draw')
                 break
 
-            # if it's check, print it
-            if self.is_check_test(self.player_opposite):
+            # if it's check, print it. Sometimes is_check_test works, sometimes is_check 
+            # if self.is_check_test(self.player_opposite):
+            #     print('Check! test')
+            if self.is_check(self.player):
                 print('Check!')
 
             user_move = input('Make your move: ').strip().upper()
