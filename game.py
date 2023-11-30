@@ -1,9 +1,12 @@
 from tabulate import tabulate 
+# import matplotlib.pyplot as plt 
+# from IPython.display import display, Image
 '''
 current problems: 
 - check why the line 'self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)[1]' swaps colors (not a big issue)
 
 to improve:
+- find_checkmate_in1() works slow.
 - Castling and en passant returns few outputs, could be better
 - Fix overlapping parts in piece is_blocked and move functions
 - is_check doesn't work to print if it's check in that position. made is_check_test to fix it but can be a better solution
@@ -18,10 +21,10 @@ class Game:
         self.tiles = []
         self.player = 'white'
         self.player_opposite = 'black'
-        self.possible_moves_opposite = self.get_possible_moves(self.player_opposite)
-        self.legal_moves_opposite = self.get_legal_moves(self.player_opposite)
-        self.legal_moves = self.get_legal_moves(self.player)
-        self.legal_moves_notation = self.get_legal_moves_notation(self.player)
+        self.possible_moves_opposite = []
+        self.legal_moves_opposite = []
+        self.legal_moves = []
+        self.legal_moves_notation = []
 
         self.has_moved = False
         self.white_has_castled = False
@@ -90,6 +93,14 @@ class Game:
         self.white_king_position = '15'
         self.black_king_position = '85'
 
+    def setup_board_checkmate(self):
+        self.get_tile('15').occupy(King('white'))
+        self.get_tile('85').occupy(King('black'))
+        self.get_tile('77').occupy(Rook('white'))
+        self.get_tile('38').occupy(Rook('white'))
+        self.white_king_position = '15'
+        self.black_king_position = '85'
+
     def print_board(self):
         board = []
         column_labels = ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
@@ -105,7 +116,8 @@ class Game:
             board.append(row)
 
         board = board[::-1]
-        print(tabulate(board, headers=column_labels, tablefmt='fancy_grid'))
+        table = tabulate(board, headers=column_labels, tablefmt='fancy_grid')
+        print(table)
 
     def get_possible_moves(self, player):
         possible_moves = []
@@ -122,6 +134,17 @@ class Game:
                                 possible_moves.append((start_pos, end_pos))
         return possible_moves
     
+    def evaluate_board(self, player):
+        piece_values = {'P': 1, 'B': 3, 'N': 3, 'R': 5, 'Q': 9, 'K': 200}
+        sum = 0
+        pieces = []
+        for row in self.tiles:
+            for tile in row:
+                if tile.is_occupied() and tile.piece.color == player:
+                    piece = tile.piece.symbol
+                    sum += piece_values.get(piece)
+        return sum
+    
     def get_legal_moves(self, player):
         possible_moves = self.get_possible_moves(player)
         legal_moves = []
@@ -137,7 +160,7 @@ class Game:
             piece = self.get_tile(move[0]).piece
             notation = self.get_notation(piece, self.get_tile(move[0]), self.get_tile(move[1]))
             legal_moves_notation.append(notation)
-        return legal_moves_notation
+        return legal_moves_notation, legal_moves
         
     # This function will simulate a move and decide if it's legal. I put is_check function inside this function to avoid recursions
     def is_legal_move(self, start_pos, end_pos):
@@ -288,7 +311,6 @@ class Game:
             piece = self.promote_pawn(piece)
             end_tile.occupy(piece)
 
-        self.round_count += 1
         return True
     
     # This function takes the move and converts it into standart notation with the help of coordinate function
@@ -416,24 +438,29 @@ class Game:
 
     # This function will run the game according to all other rules
     def run(self):
-        # self.setup_board()
+        self.setup_board()
         # self.setup_board_check()
-        self.setup_board_castle()
+        # self.setup_board_castle()
         # self.setup_board_pawn()
+        # self.setup_board_checkmate()
         self.round_count = 0
+
  
         while True:
             self.player = 'black' if self.round_count % 2 else 'white'
-            self.legal_moves = self.get_legal_moves(self.player)
-            self.legal_moves_notation = self.get_legal_moves_notation(self.player)
-
-            # for some reasons this function swaps white and black.
-            self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)
+            self.legal_moves_notation, self.legal_moves = self.get_legal_moves_notation(self.player)
+            # for some reasons this function swaps white and black. So I define the colors again after running it
+            self.legal_moves_opposite_notation, self.legal_moves_opposite = self.get_legal_moves_notation(self.player_opposite)
             self.player = 'black' if self.round_count % 2 else 'white'
 
             print(f"There are {len(self.legal_moves)} moves for {self.player}. These are: ") # Should be self.player but somehow got reversed
-            print(f"All legal moves are {','.join(self.legal_moves_notation)}") 
-            print(f"legal opposite moves are {','.join(self.legal_moves_opposite_notation)}")
+            print(f"Legal moves are {','.join(self.legal_moves_notation)}") 
+            print(f"Legal opposite moves are {','.join(self.legal_moves_opposite_notation)}")
+
+            # If there's a checkmate in 1 move, this function finds and prints the move
+            notation = self.find_checkmate_in1()
+            if notation:
+                print(f"Checkmate in 1 move has found: {notation}")
 
             # Printing the board and starting with first move
             self.print_board()
@@ -465,6 +492,7 @@ class Game:
                     idx = self.legal_moves_notation.index(user_move)
                     self.move(self.legal_moves[idx][0],self.legal_moves[idx][1])
                     self.played_moves.append((self.legal_moves[idx][0],self.legal_moves[idx][1]))
+                    self.round_count += 1
 
                 # Checking if the input is given by coordinates
                 elif len(user_move.split()) == 2:
@@ -472,6 +500,7 @@ class Game:
                     if (split_move[0], split_move[1]) in self.legal_moves:
                         self.move(split_move[0], split_move[1])
                         self.played_moves.append((split_move[0], split_move[1]))
+                        self.round_count += 1
         
                 elif user_move.lower() == 'resign':
                     print(f'Game has ended. {self.player_opposite} won')
@@ -484,8 +513,68 @@ class Game:
             except ValueError:
                 print('Please enter 2 coordinates between 11-88')
                 continue
-            
 
+    def find_checkmate_in1(self):
+        for move in self.legal_moves:
+            start_tile = self.get_tile(move[0])
+            end_tile = self.get_tile(move[1])
+            temp_piece = end_tile.piece
+
+            notation = self.get_notation(start_tile.piece, start_tile, end_tile)
+
+            self.move(move[0], move[1])
+            self.legal_moves_opposite = self.get_legal_moves_notation(self.player_opposite)[1]
+
+            if len(self.legal_moves_opposite) == 0:
+                start_tile.occupy(end_tile.piece)
+                end_tile.leave()
+                end_tile.occupy(temp_piece)
+                return notation
+            
+            start_tile.occupy(end_tile.piece)
+            end_tile.leave()
+            end_tile.occupy(temp_piece)
+        else:
+            return False
+
+    def print_evaluation_score(self):
+            white_score = self.evaluate_board('white')
+            black_score = self.evaluate_board('black')
+            # Calculate the proportions
+            total = white_score + black_score
+            white_score_proportion = white_score / total
+            black_score_proportion = black_score / total
+
+            # Create a bar chart with stacked bars
+            plt.figure(figsize=(1, 5))
+
+            # Plot the white
+            plt.bar(0, white_score_proportion, color='white')
+
+            # Plot the second value on top of the first with another color
+            plt.bar(0, black_score_proportion, bottom=white_score_proportion, color='black')
+
+            # Remove y-axis ticks and label
+            plt.xticks([])
+            plt.xlabel('')
+            # Set axis limits
+            plt.ylim(0, 1)
+            plt.xlim(0, 0.3)
+
+            plt.show()
+            # Convert the plot to an image
+            # plt.savefig('plot.png', bbox_inches='tight')
+
+            # Display the image
+            # display(Image('plot.png'))
+
+    def print_board_as_png(self):
+        # table = self.print_board()
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, table, ha='center', va='center', fontsize=12)
+        ax.axis('off')
+        plt.savefig('printed_board.png')
+        plt.show()
 
 class Tile:
     def __init__(self, position) -> None:
