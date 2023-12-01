@@ -1,4 +1,6 @@
 from tabulate import tabulate 
+import itertools as it
+import numpy as np
 # import matplotlib.pyplot as plt 
 # from IPython.display import display, Image
 '''
@@ -33,6 +35,8 @@ class Game:
         self.rook18_has_moved = False
         self.rook81_has_moved = False
         self.rook88_has_moved = False
+        self.white_king_position = None
+        self.black_king_position = None
 
         self.played_moves = [('11','11')]
 
@@ -103,7 +107,7 @@ class Game:
 
     def print_board(self):
         board = []
-        column_labels = ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        column_labels = list(' ABCDEFGH')
 #         column_labels = [' '] + [str(i) for i in range(1,9)]
         for i in range(1, 9):
             row = [i]
@@ -134,16 +138,71 @@ class Game:
                                 possible_moves.append((start_pos, end_pos))
         return possible_moves
     
-    def evaluate_board(self, player):
+    def test(self):
+        self.setup_board_castle()
+        self.print_board()
+        legal_moves_white, legal_moves_black, legal_moves_white_notated, legal_moves_black_notated = self.get_legal_moves_improved()
+        print(legal_moves_white_notated, len(legal_moves_white))
+    
+    def get_possible_moves_improved(self):
+        possible_moves_white = []
+        possible_moves_black = []
+        for row in self.tiles:
+            for start_tile in row:
+                if start_tile.is_occupied():
+                    piece = start_tile.piece
+                    color = piece.color
+                    start = start_tile.position
+                    possible_ends = piece.move_recommend(start_tile)
+                    for end in possible_ends:
+                        end_tile = self.get_tile(end)
+                        if end_tile and piece.move(start_tile, end_tile, self):
+                            possible_moves_white.append((start, end)) if color == 'white' else possible_moves_black.append((start, end))
+                            # print(f'end squares for {start} is {end}')
+        return possible_moves_white, possible_moves_black
+    
+    def get_legal_moves_improved(self):
+        possible_moves_white, possible_moves_black = self.get_possible_moves_improved()
+        legal_moves_white = []
+        legal_moves_black = []
+        legal_moves_white_notated = []
+        legal_moves_black_notated = []
+        for move in possible_moves_white:
+            if self.is_legal_move(move[0], move[1]):
+                legal_moves_white.append(move)
+                # This 5 lines are for appending notation, not so necessary
+                start_tile = self.get_tile(move[0])
+                end_tile = self.get_tile(move[1])
+                piece = start_tile.piece
+                notation = self.get_notation(piece, start_tile, end_tile)
+                legal_moves_white_notated.append(notation)
+        for move in possible_moves_black:
+            if self.is_legal_move(move[0], move[1]):
+                legal_moves_black.append(move)
+                start_tile = self.get_tile(move[0])
+                end_tile = self.get_tile(move[1])
+                piece = start_tile.piece
+                notation = self.get_notation(piece, start_tile, end_tile)
+                legal_moves_black_notated.append(notation)
+        return legal_moves_white, legal_moves_black, legal_moves_white_notated, legal_moves_black_notated
+    
+    def evaluate_board(self):
         piece_values = {'P': 1, 'B': 3, 'N': 3, 'R': 5, 'Q': 9, 'K': 200}
-        sum = 0
-        pieces = []
+        sum_white = 0
+        sum_black = 0
+        # pieces_white = []
+        # pieces_black = []
         for row in self.tiles:
             for tile in row:
-                if tile.is_occupied() and tile.piece.color == player:
-                    piece = tile.piece.symbol
-                    sum += piece_values.get(piece)
-        return sum
+                if tile.is_occupied():
+                    piece_symbol = tile.piece.symbol
+                    if tile.piece.color == 'white':
+                        # pieces_white.append(piece_symbol)
+                        sum_white += piece_values.get(piece_symbol)
+                    if tile.piece.color == 'black':
+                        # pieces_white.append(piece_symbol)
+                        sum_black += piece_values.get(piece_symbol)    
+        return sum_white, sum_black
     
     def get_legal_moves(self, player):
         possible_moves = self.get_possible_moves(player)
@@ -338,8 +397,13 @@ class Game:
     
     # This function is for getting tile numbers in easier way
     def get_tile(self, pos):
-        r,c = pos[0], pos[1]
-        return self.tiles[int(r)-1][int(c)-1]
+        try:
+            r,c = pos[0], pos[1]
+            return self.tiles[int(r)-1][int(c)-1]
+        except:
+            print(f'get_tile error at position: {pos}')
+            # import pdb; pdb.set_trace()
+            return
     
     def track_king(self, color):
         king_positions = [self.white_king_position, self.black_king_position] if color == 'white' else \
@@ -407,8 +471,7 @@ class Game:
                             return [False]
                     rook_start_tile = self.get_tile(f'{end[0]}8')  # Adjust for the Rook's position
                     rook_end_tile = self.get_tile(f'{end[0]}6')
-                else:
-                    return [False]
+                    return [True, rook_start_tile, rook_end_tile]
 
             elif end[1] == '3':
                 if (not self.rook11_has_moved and start_tile.piece.color == 'white') or \
@@ -425,10 +488,10 @@ class Game:
                         
                     rook_start_tile = self.get_tile(f'{end[0]}1')  # Adjust for the Rook's position
                     rook_end_tile = self.get_tile(f'{end[0]}4')
-                else:
-                    return [False]
 
-            return [True, rook_start_tile, rook_end_tile]
+                    return [True, rook_start_tile, rook_end_tile]
+        
+            return [False]
 
         return [False]
     
@@ -447,20 +510,15 @@ class Game:
 
  
         while True:
+ 
+            self.legal_moves_white, self.legal_moves_black, self.legal_moves_white_notated, self.legal_moves_black_notated = self.get_legal_moves_improved()
             self.player = 'black' if self.round_count % 2 else 'white'
-            self.legal_moves_notation, self.legal_moves = self.get_legal_moves_notation(self.player)
-            # for some reasons this function swaps white and black. So I define the colors again after running it
-            self.legal_moves_opposite_notation, self.legal_moves_opposite = self.get_legal_moves_notation(self.player_opposite)
-            self.player = 'black' if self.round_count % 2 else 'white'
+            self.player_opposite = 'black' if self.player == 'white' else 'white'
+            self.legal_moves = self.legal_moves_white if self.player == 'white' else self.legal_moves_black
+            self.legal_moves_notation = self.legal_moves_white_notated if self.player == 'white' else self.legal_moves_black_notated
 
-            print(f"There are {len(self.legal_moves)} moves for {self.player}. These are: ") # Should be self.player but somehow got reversed
-            print(f"Legal moves are {','.join(self.legal_moves_notation)}") 
-            print(f"Legal opposite moves are {','.join(self.legal_moves_opposite_notation)}")
-
-            # If there's a checkmate in 1 move, this function finds and prints the move
-            notation = self.find_checkmate_in1()
-            if notation:
-                print(f"Checkmate in 1 move has found: {notation}")
+            print(f"There are {len(self.legal_moves_white)} moves for white. Legal moves are: {','.join(self.legal_moves_white_notated)}") 
+            print(f"There are {len(self.legal_moves_black)} for black. Legal moves are: {','.join(self.legal_moves_black_notated)}")
 
             # Printing the board and starting with first move
             self.print_board()
@@ -473,11 +531,12 @@ class Game:
                     print('Stelamete! The game is draw')
                 break
 
-            # if it's check, print it. Sometimes is_check_test works, sometimes is_check 
-            # if self.is_check_test(self.player_opposite):
-            #     print('Check! test')
             if self.is_check(self.player):
                 print('Check!')
+
+            # Print if there's checkmate in one
+            if self.find_checkmate_in1():
+                print(f'checkmate in 1 move has found: {self.find_checkmate_in1()}')
 
             user_move = input('Make your move: ').strip().upper()
             for idx, character in enumerate(user_move):
@@ -538,8 +597,7 @@ class Game:
             return False
 
     def print_evaluation_score(self):
-            white_score = self.evaluate_board('white')
-            black_score = self.evaluate_board('black')
+            white_score, black_score = self.evaluate_board()
             # Calculate the proportions
             total = white_score + black_score
             white_score_proportion = white_score / total
@@ -662,6 +720,21 @@ class Pawn(Piece):
             return True  # Return True if the move is successful
 
         return True
+    
+    def move_recommend(self, start_tile):
+        end_squares = []
+        start = start_tile.position
+        direction = 1 if start_tile.piece.color == 'white' else -1
+
+        potential_moves = np.array([(2,0), (1,0), (1,1), (1,-1)])
+        potential_moves = (direction, 1) * potential_moves
+
+        for move in potential_moves:
+            row, col = int(start[0]) + move[0], int(start[1]) + move[1]
+            if 1 <= row <= 8 and 1 <= col <= 8:
+                end_squares.append(f"{row}{col}")
+
+        return end_squares
 
 class Bishop(Piece):
     def __init__(self, color) -> None:
@@ -702,6 +775,21 @@ class Bishop(Piece):
             current_col += col_increment
 
         return False  # Path is clear for movement
+    
+    def move_recommend(self, start_tile):
+        end_squares = []
+        start = start_tile.position
+
+        # Generating potential moves for bishop (diagonal)
+        for i in range(1, 9):
+            if i != int(start[0]):
+                if 1<= int(start[1]) - int(start[0]) + i <= 8:
+                    end_squares.append(f"{i}{int(start[1]) - int(start[0]) + i}")  # Diagonal top-right
+                if 1<= int(start[1]) + int(start[0]) - i <= 8:
+                    end_squares.append(f"{i}{int(start[1]) + int(start[0]) - i}")  # Diagonal top-left
+
+        return end_squares
+
 
 
 class Knight(Piece):
@@ -728,6 +816,23 @@ class Knight(Piece):
             return True 
         else:
             return False
+        
+    def move_recommend(self, start_tile):
+        end_squares = []
+        start = start_tile.position
+
+        # This part will give us all combinations of 2 and 1 with altering signs 
+        numbers = np.array(list(it.permutations([1,2])))
+        directions = np.array(list(it.product([1,-1], repeat = 2)))
+        potential_moves = [x*y for x in numbers for y in  directions]
+
+        for move in potential_moves:
+            row, col = int(start[0]) + move[0], int(start[1]) + move[1]
+            if 1 <= row <= 8 and 1 <= col <= 8:
+                end_squares.append(f"{row}{col}")
+
+        return end_squares
+
 
 class Rook(Piece):
     def __init__(self, color) -> None:
@@ -786,6 +891,19 @@ class Rook(Piece):
             return True
         return False
 
+    def move_recommend(self, start_tile):
+        end_squares = []
+        start = start_tile.position
+
+        # Generating potential moves for rook (vertical and horizontal)
+        for i in range(1, 9):
+            if i != int(start[0]):
+                end_squares.append(f"{i}{start[1]}")  # Moves along row
+            if i != int(start[1]):
+                end_squares.append(f"{start[0]}{i}")  # Moves along column
+
+        return end_squares
+
 
 class Queen(Piece):
     def __init__(self, color) -> None:
@@ -831,6 +949,23 @@ class Queen(Piece):
 
         return False  # Path is clear for movement
 
+    def move_recommend(self, start_tile):
+        end_squares = []
+        start = start_tile.position
+
+        # Generating potential moves for queen (combination of rook and bishop movements)
+        for i in range(1, 9):
+            if i != int(start[0]):
+                end_squares.append(f"{i}{start[1]}")  # Moves along rows
+                if 1<= int(start[1]) - int(start[0]) + i <= 8:
+                    end_squares.append(f"{i}{int(start[1]) - int(start[0]) + i}")  # Diagonal top-right
+                if 1<= int(start[1]) + int(start[0]) - i <= 8:
+                    end_squares.append(f"{i}{int(start[1]) + int(start[0]) - i}")  # Diagonal top-left
+            if i != int(start[1]):
+                end_squares.append(f"{start[0]}{i}")  # Moves along columns
+
+        return end_squares
+
 class King(Piece):
     def __init__(self, color) -> None:
         super().__init__(color)
@@ -871,6 +1006,23 @@ class King(Piece):
         if not self.has_moved :
             return True
         return False
+    
+    def move_recommend(self, start_tile):
+        end_squares = []
+        start = start_tile.position
+
+        directions = [1,-1,0]
+        potential_moves = list(it.product(directions, repeat = 2)) # Adding regular moves
+        potential_moves.remove((0,0)) # Removing pass move
+        potential_moves.extend([(0,2), (0,-2)]) # Adding castling options
+
+        for move in potential_moves:
+            row, col = int(start[0]) + move[0], int(start[1]) + move[1]
+            if 1 <= row <= 8 and 1 <= col <= 8:
+                end_squares.append(f"{row}{col}")
+
+        return end_squares
 
 game = Game()
 game.run()
+# game.test()
