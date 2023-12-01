@@ -582,7 +582,7 @@ class Game:
             notation = self.get_notation(start_tile.piece, start_tile, end_tile)
 
             self.move(move[0], move[1])
-            self.legal_moves_opposite = self.get_legal_moves_notation(self.player_opposite)[1]
+            self.legal_moves_opposite = self.get_legal_moves(self.player_opposite)
 
             if len(self.legal_moves_opposite) == 0:
                 start_tile.occupy(end_tile.piece)
