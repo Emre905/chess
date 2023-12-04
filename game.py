@@ -1,14 +1,15 @@
 from tabulate import tabulate 
 import itertools as it
 import numpy as np
+from time import time
 # import matplotlib.pyplot as plt 
 # from IPython.display import display, Image
 '''
 current problems: 
-- check why the line 'self.legal_moves_opposite_notation = self.get_legal_moves_notation(self.player_opposite)[1]' swaps colors (not a big issue)
+- check why calling self.get_legal_moves swaps colors (not a big issue)
 
 to improve:
-- find_checkmate_in1() works slow.
+- find_checkmate_in1() works okay but slow for more possible moves (around O(logx)).
 - Castling and en passant returns few outputs, could be better
 - Fix overlapping parts in piece is_blocked and move functions
 - is_check doesn't work to print if it's check in that position. made is_check_test to fix it but can be a better solution
@@ -105,6 +106,20 @@ class Game:
         self.white_king_position = '15'
         self.black_king_position = '85'
 
+    def setup_board_checkmate2(self):
+        self.get_tile('15').occupy(King('white'))
+        self.get_tile('85').occupy(King('black'))
+        self.get_tile('77').occupy(Rook('white'))
+        self.get_tile('38').occupy(Rook('white'))
+        self.get_tile('36').occupy(Bishop('white'))
+        self.get_tile('28').occupy(Bishop('white'))
+        self.get_tile('22').occupy(Pawn('white'))
+        self.get_tile('23').occupy(Pawn('white'))
+        self.get_tile('24').occupy(Pawn('white'))
+        self.get_tile('25').occupy(Pawn('white'))
+        self.white_king_position = '15'
+        self.black_king_position = '85'
+
     def print_board(self):
         board = []
         column_labels = list(' ABCDEFGH')
@@ -126,27 +141,21 @@ class Game:
     def get_possible_moves(self, player):
         possible_moves = []
         for row in self.tiles:
-            for tile in row:
-                if tile.is_occupied() and tile.piece.color == player:
-                    piece = tile.piece
-                    for i in range(1, 9):
-                        for j in range(1, 9):
-                            end_tile = self.get_tile(f"{i}{j}")
-                            start_pos = tile.position
-                            end_pos = end_tile.position
-                            if piece.move(tile, end_tile, self):
-                                possible_moves.append((start_pos, end_pos))
+            for start_tile in row:
+                if start_tile.is_occupied() and start_tile.piece.color == player:
+                    piece = start_tile.piece
+                    color = piece.color
+                    start = start_tile.position
+                    possible_ends = piece.move_recommend(start_tile)
+                    for end in possible_ends:
+                        end_tile = self.get_tile(end)
+                        if piece.move(start_tile, end_tile, self):
+                            possible_moves.append((start, end))
         return possible_moves
     
-    def test(self):
-        self.setup_board_castle()
-        self.print_board()
-        legal_moves_white, legal_moves_black, legal_moves_white_notated, legal_moves_black_notated = self.get_legal_moves_improved()
-        print(legal_moves_white_notated, len(legal_moves_white))
-    
     def get_possible_moves_improved(self):
-        possible_moves_white = []
-        possible_moves_black = []
+        pos_mw = []
+        pos_mb = []
         for row in self.tiles:
             for start_tile in row:
                 if start_tile.is_occupied():
@@ -156,35 +165,35 @@ class Game:
                     possible_ends = piece.move_recommend(start_tile)
                     for end in possible_ends:
                         end_tile = self.get_tile(end)
-                        if end_tile and piece.move(start_tile, end_tile, self):
-                            possible_moves_white.append((start, end)) if color == 'white' else possible_moves_black.append((start, end))
+                        if piece.move(start_tile, end_tile, self):
+                            pos_mw.append((start, end)) if color == 'white' else pos_mb.append((start, end))
                             # print(f'end squares for {start} is {end}')
-        return possible_moves_white, possible_moves_black
+        return pos_mw, pos_mb
     
     def get_legal_moves_improved(self):
-        possible_moves_white, possible_moves_black = self.get_possible_moves_improved()
-        legal_moves_white = []
-        legal_moves_black = []
-        legal_moves_white_notated = []
-        legal_moves_black_notated = []
-        for move in possible_moves_white:
+        pos_mw, pos_mb = self.get_possible_moves_improved()
+        legal_mw = []
+        legal_mb = []
+        legal_mw_not = []
+        legal_mb_not = []
+        for move in pos_mw:
             if self.is_legal_move(move[0], move[1]):
-                legal_moves_white.append(move)
+                legal_mw.append(move)
                 # This 5 lines are for appending notation, not so necessary
                 start_tile = self.get_tile(move[0])
                 end_tile = self.get_tile(move[1])
                 piece = start_tile.piece
                 notation = self.get_notation(piece, start_tile, end_tile)
-                legal_moves_white_notated.append(notation)
-        for move in possible_moves_black:
+                legal_mw_not.append(notation)
+        for move in pos_mb:
             if self.is_legal_move(move[0], move[1]):
-                legal_moves_black.append(move)
+                legal_mb.append(move)
                 start_tile = self.get_tile(move[0])
                 end_tile = self.get_tile(move[1])
                 piece = start_tile.piece
                 notation = self.get_notation(piece, start_tile, end_tile)
-                legal_moves_black_notated.append(notation)
-        return legal_moves_white, legal_moves_black, legal_moves_white_notated, legal_moves_black_notated
+                legal_mb_not.append(notation)
+        return legal_mw, legal_mb, legal_mw_not, legal_mb_not
     
     def evaluate_board(self):
         piece_values = {'P': 1, 'B': 3, 'N': 3, 'R': 5, 'Q': 9, 'K': 200}
@@ -366,7 +375,7 @@ class Game:
                 self.rook88_has_moved = True
 
         # Check for pawn promotion
-        elif isinstance(piece, Pawn) and (end_tile.position[0] in ('1', '8')) and piece.is_promote:
+        elif isinstance(piece, Pawn) and (end_tile.position[0] in ('1', '8')):
             piece = self.promote_pawn(piece)
             end_tile.occupy(piece)
 
@@ -395,15 +404,14 @@ class Game:
         coordinates={'1':'A', '2':'B', '3':'C', '4':'D', '5':'E', '6':'F', '7':'G', '8':'H'}
         return coordinates.get(end[1]) + end[0]
     
+    def coordinate_reverse(self, end):
+        coordinates={'A':'1', 'B':'2', 'C':'3', 'D':'4', 'E':'5', 'F':'6', 'G':'7', 'H':'8'}
+        return end[1] + coordinates.get(end[0])
+    
     # This function is for getting tile numbers in easier way
     def get_tile(self, pos):
-        try:
-            r,c = pos[0], pos[1]
-            return self.tiles[int(r)-1][int(c)-1]
-        except:
-            print(f'get_tile error at position: {pos}')
-            # import pdb; pdb.set_trace()
-            return
+        r,c = pos[0], pos[1]
+        return self.tiles[int(r)-1][int(c)-1]
     
     def track_king(self, color):
         king_positions = [self.white_king_position, self.black_king_position] if color == 'white' else \
@@ -459,8 +467,8 @@ class Game:
             # print(self.legal_moves_opposite)
             if end[1] == '7':
                 # Check if the corresponding rook has moved
-                if (not self.rook18_has_moved and start_tile.piece.color == 'white') or \
-                (not self.rook88_has_moved and start_tile.piece.color == 'black'):
+                if ((not self.rook18_has_moved and start_tile.piece.color == 'white') or \
+                (not self.rook88_has_moved and start_tile.piece.color == 'black')) and isinstance(self.get_tile(f'{end[0]}8').piece, Rook):
                     # Check if the middle squares are under threat
                     middle_tile = self.get_tile(f'{end[0]}6')
                     middle_square = middle_tile.position
@@ -474,8 +482,8 @@ class Game:
                     return [True, rook_start_tile, rook_end_tile]
 
             elif end[1] == '3':
-                if (not self.rook11_has_moved and start_tile.piece.color == 'white') or \
-                (not self.rook81_has_moved and start_tile.piece.color == 'black'):
+                if ((not self.rook11_has_moved and start_tile.piece.color == 'white') or \
+                (not self.rook81_has_moved and start_tile.piece.color == 'black')) and isinstance(self.get_tile(f'{end[0]}1').piece, Rook):
             
                     # Check if the middle squares are under threat
                     middle_tile = self.get_tile(end[0] + '4')
@@ -495,99 +503,21 @@ class Game:
 
         return [False]
     
-    # This function will do the first print statements and get the user input to make the run function shorter
-    def handle_setup():
-        pass
-
-    # This function will run the game according to all other rules
-    def run(self):
-        self.setup_board()
-        # self.setup_board_check()
-        # self.setup_board_castle()
-        # self.setup_board_pawn()
-        # self.setup_board_checkmate()
-        self.round_count = 0
-
- 
-        while True:
- 
-            self.legal_moves_white, self.legal_moves_black, self.legal_moves_white_notated, self.legal_moves_black_notated = self.get_legal_moves_improved()
-            self.player = 'black' if self.round_count % 2 else 'white'
-            self.player_opposite = 'black' if self.player == 'white' else 'white'
-            self.legal_moves = self.legal_moves_white if self.player == 'white' else self.legal_moves_black
-            self.legal_moves_notation = self.legal_moves_white_notated if self.player == 'white' else self.legal_moves_black_notated
-
-            print(f"There are {len(self.legal_moves_white)} moves for white. Legal moves are: {','.join(self.legal_moves_white_notated)}") 
-            print(f"There are {len(self.legal_moves_black)} for black. Legal moves are: {','.join(self.legal_moves_black_notated)}")
-
-            # Printing the board and starting with first move
-            self.print_board()
-
-            # if it's checkmate or stalemate (there are no legal moves), the game ends
-            if len(self.legal_moves) == 0:
-                if self.is_check(self.player):
-                    print(f'Checkmate! {self.player_opposite} player won')
-                else:
-                    print('Stelamete! The game is draw')
-                break
-
-            if self.is_check(self.player):
-                print('Check!')
-
-            # Print if there's checkmate in one
-            if self.find_checkmate_in1():
-                print(f'checkmate in 1 move has found: {self.find_checkmate_in1()}')
-
-            user_move = input('Make your move: ').strip().upper()
-            for idx, character in enumerate(user_move):
-                if character == 'X':
-                    notation = list(user_move)
-                    # Replace X with x
-                    notation[idx] = 'x'
-                    user_move = ''.join(notation)
-            try:
-                # Checking if the input is given by standard notation
-                if user_move in self.legal_moves_notation:
-                    idx = self.legal_moves_notation.index(user_move)
-                    self.move(self.legal_moves[idx][0],self.legal_moves[idx][1])
-                    self.played_moves.append((self.legal_moves[idx][0],self.legal_moves[idx][1]))
-                    self.round_count += 1
-
-                # Checking if the input is given by coordinates
-                elif len(user_move.split()) == 2:
-                    split_move = user_move.split()
-                    if (split_move[0], split_move[1]) in self.legal_moves:
-                        self.move(split_move[0], split_move[1])
-                        self.played_moves.append((split_move[0], split_move[1]))
-                        self.round_count += 1
-        
-                elif user_move.lower() == 'resign':
-                    print(f'Game has ended. {self.player_opposite} won')
-                    break
-
-                else:
-                    print('Please enter 2 coordinates between 11-88')
-                    continue
-
-            except ValueError:
-                print('Please enter 2 coordinates between 11-88')
-                continue
-
     def find_checkmate_in1(self):
         for move in self.legal_moves:
+            start_time = time()
             start_tile = self.get_tile(move[0])
             end_tile = self.get_tile(move[1])
             temp_piece = end_tile.piece
 
-            notation = self.get_notation(start_tile.piece, start_tile, end_tile)
-
             self.move(move[0], move[1])
             self.legal_moves_opposite = self.get_legal_moves(self.player_opposite)
 
-            if len(self.legal_moves_opposite) == 0:
+            if not self.legal_moves_opposite: # If the opponent has no moves it's checkmate
                 start_tile.occupy(end_tile.piece)
                 end_tile.leave()
                 end_tile.occupy(temp_piece)
+                notation = self.get_notation(start_tile.piece, start_tile, end_tile)
                 return notation
             
             start_tile.occupy(end_tile.piece)
@@ -595,6 +525,111 @@ class Game:
             end_tile.occupy(temp_piece)
         else:
             return False
+        
+    def test(self):
+        time1 = time()
+        for i in range(30):
+            self.setup_board()
+            a, b, c, d = self.get_legal_moves_improved()
+        print(f"--- {time() - time1} seconds ---")
+
+        time2 = time()
+        for i in range(30):
+            self.setup_board()
+            a, b = self.get_legal_moves_notation('white')
+            c, d = self.get_legal_moves_notation('black')
+        print(f"--- {time() - time2} seconds ---")
+
+    # This function will do the necessary print statements and get the user input to make the run function shorter
+    def handle_setup(self):
+        self.legal_mw, self.legal_mb, self.legal_mw_not, self.legal_mb_not = self.get_legal_moves_improved()
+        self.player = 'black' if self.round_count % 2 else 'white'
+        self.player_opposite = 'black' if self.player == 'white' else 'white'
+        self.legal_moves = self.legal_mw if self.player == 'white' else self.legal_mb
+        self.legal_moves_notation = self.legal_mw_not if self.player == 'white' else self.legal_mb_not
+
+        print(f"There are {len(self.legal_mw)} moves for white. Legal moves are: {','.join(self.legal_mw_not)}") 
+        print(f"There are {len(self.legal_mb)} moves for black. Legal moves are: {','.join(self.legal_mb_not)}")
+        print(f'Turn for {self.player}')
+        # Printing the board and starting with first move
+        self.print_board()
+
+        # if it's checkmate or stalemate (there are no legal moves), the game ends
+        if not self.legal_moves:
+            if self.is_check(self.player):
+                print(f'Checkmate! {self.player_opposite} player won')
+            else:
+                print('Stelamete! The game is draw')
+            return False
+
+        if self.is_check(self.player):
+            print('Check!')
+        
+        # Print if there's checkmate in one
+        start_time = time()
+        if self.find_checkmate_in1():
+            print(f'checkmate in 1 move has found: {self.find_checkmate_in1()}')
+        print(f"--- {time() - start_time} seconds ---")
+
+        user_move = input('Make your move: ').strip().upper()
+        
+        if len(user_move) > 1 and user_move[1] == 'X':
+            notation = list(user_move)
+            # Replace X with x
+            notation[1] = 'x'
+            user_move = ''.join(notation)
+            
+        if user_move.lower() == 'resign':
+            print(f'Game has ended. {self.player_opposite} won')
+            return False
+
+        return user_move
+
+    # This function will run the game according to all other rules
+    def run(self):
+        print('''
+Welcome to the chess game! To make a move you have 3 options: 
+1- Use the chess notation (without +, ++, =, o-o, o-o-o)
+2- Use locations as (row, column). For example in the beginning NF3 would be '17 36' referring to the piece at 17 goes to 36. 
+3- Use locations as (letter, row). For example in the beginning NF3 would be 'G1 F3' referring to the piece at G1 goes to F3''')
+        self.setup_board()
+        # self.setup_board_checkmate2()
+        self.round_count = 0
+
+        while True:
+            user_move = self.handle_setup()  # Get all the prints and necessary variables
+            if not user_move:   # Finish the game if there's a checkmate
+                break
+
+            try:
+                # Check if the input is given by standard notation
+                if user_move in self.legal_moves_notation:
+                    idx = self.legal_moves_notation.index(user_move)
+                    self.move(self.legal_moves[idx][0],self.legal_moves[idx][1])
+                    self.played_moves.append((self.legal_moves[idx][0],self.legal_moves[idx][1]))
+                    self.round_count += 1
+
+                # Check if the input is given by coordinates
+                elif len(user_move.split()) == 2:
+                    split_move = user_move.split()
+                    if (split_move[0], split_move[1]) in self.legal_moves: # If the move is given like '17 36'
+                        self.move(split_move[0], split_move[1])
+                        self.played_moves.append((split_move[0], split_move[1]))
+                        self.round_count += 1
+
+                    elif (self.coordinate_reverse(split_move[0]), self.coordinate_reverse(split_move[1])) in self.legal_moves:
+                        self.move(self.coordinate_reverse(split_move[0]), self.coordinate_reverse(split_move[1]))
+                        self.played_moves.append((self.coordinate_reverse(split_move[0]), self.coordinate_reverse(split_move[1])))
+                        self.round_count += 1
+
+                else:
+                    print('Please enter 2 coordinates between 11-88')
+                    continue
+
+            except (IndexError, TypeError):
+                print('Please enter 2 coordinates between 11-88')
+                continue
+
 
     def print_evaluation_score(self):
             white_score, black_score = self.evaluate_board()
@@ -673,20 +708,12 @@ class Pawn(Piece):
     def __init__(self, color) -> None:
         super().__init__(color)
         self.symbol = 'P'
-        self.is_promote = False
         self.is_en_passant = False
         self.direction = 1 if self.color == 'white' else -1
 
     def move(self, start_tile, end_tile, game):
         if not self.is_blocked(start_tile, end_tile, game):
-
-            # This part is for promoting a Pawn
-            if (start_tile.position[0] == '7' and end_tile.position[0] == '8' and self.color == 'white') or \
-                (start_tile.position[0] == '2' and end_tile.position[0] == '1' and self.color == 'black'):  
-                self.is_promote = True
-
             return True
-
         return False  # Movement didn't match any valid rules
 
     
@@ -983,13 +1010,12 @@ class King(Piece):
         if self.is_blocked(start_tile, end_tile, game):
             return False
 
-        elif abs(int(start_tile.position[1]) - int(end_tile.position[1])) == 2 and start_tile.position[0] == end_tile.position[0]:
-            if self.is_castle(start_tile, end_tile, game):
-                return True
-
         # Check if the King moves within one square in any direction
         elif row_diff < 2 and col_diff < 2:
             self.position = end_tile.position
+            return True
+
+        elif abs(int(start_tile.position[1]) - int(end_tile.position[1])) == 2 and start_tile.position[0] == end_tile.position[0]:
             return True
 
         return False  # Movement didn't match any valid rules
@@ -1000,13 +1026,6 @@ class King(Piece):
         else:
             return False
         
-    # This function will check if the king can castle
-    # add and game.castle(start_tile.position, end_tile.position)
-    def is_castle(self, start_tile, end_tile, game):
-        if not self.has_moved :
-            return True
-        return False
-    
     def move_recommend(self, start_tile):
         end_squares = []
         start = start_tile.position
