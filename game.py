@@ -2,17 +2,20 @@ from tabulate import tabulate
 import itertools as it
 import numpy as np
 from time import time
+import timeit 
 # import matplotlib.pyplot as plt 
 # from IPython.display import display, Image
 '''
 current problems: 
 - check why calling self.get_legal_moves swaps colors (not a big issue)
+- checkmating on a castle move is not detected by find_checkmate_in1 func
 
 to improve:
-- find_checkmate_in1() works okay but slow for more possible moves (around O(logx)).
+- find_checkmate_in1() works around O(logx) speed. Should be faster for deeper analysis 
 - Castling and en passant returns few outputs, could be better
 - Fix overlapping parts in piece is_blocked and move functions
 - is_check doesn't work to print if it's check in that position. made is_check_test to fix it but can be a better solution
+- get legal moves swaps colors, same for promoted pawn
 
 to add:
 - all notations
@@ -40,6 +43,14 @@ class Game:
         self.black_king_position = None
 
         self.played_moves = [('11','11')]
+        self.PIECES = {
+    "R": "♖", "r": "♜",
+    "N": "♘", "n": "♞",
+    "B": "♗", "b": "♝",
+    "Q": "♕", "q": "♛",
+    "K": "♔", "k": "♚",
+    "P": "♙", "p": "♟",
+}
 
         for coll in range(1,9):
             row = []
@@ -82,12 +93,20 @@ class Game:
     def setup_board_castle(self):
         self.get_tile('15').occupy(King('white'))
         self.get_tile('85').occupy(King('black'))
-        self.get_tile('17').occupy(Rook('white'))
+        # self.get_tile('17').occupy(Rook('white'))
         self.get_tile('11').occupy(Rook('white'))
-        self.get_tile('84').occupy(Rook('black'))
+        self.get_tile('81').occupy(Rook('black'))
         self.get_tile('88').occupy(Rook('black'))
         self.white_king_position = '15'
         self.black_king_position = '85'
+    def setup_board_castle2(self):
+        self.get_tile('15').occupy(King('white'))
+        self.get_tile('84').occupy(King('black'))
+        self.get_tile('25').occupy(Rook('white'))
+        self.get_tile('23').occupy(Rook('white'))
+        self.get_tile('11').occupy(Rook('white'))
+        self.white_king_position = '15'
+        self.black_king_position = '84'
 
     def setup_board_pawn(self):
         self.get_tile('15').occupy(King('white'))
@@ -95,6 +114,17 @@ class Game:
         self.get_tile('72').occupy(Pawn('white'))
         self.get_tile('53').occupy(Pawn('white'))
         self.get_tile('74').occupy(Pawn('black'))
+        self.get_tile('77').occupy(Rook('white'))
+        self.white_king_position = '15'
+        self.black_king_position = '85'
+
+    def setup_board_pawn2(self):
+        self.get_tile('15').occupy(King('white'))
+        self.get_tile('85').occupy(King('black'))
+        self.get_tile('22').occupy(Pawn('black'))
+        self.get_tile('53').occupy(Pawn('white'))
+        self.get_tile('74').occupy(Pawn('black'))
+        self.get_tile('27').occupy(Rook('black'))
         self.white_king_position = '15'
         self.black_king_position = '85'
 
@@ -122,21 +152,34 @@ class Game:
 
     def print_board(self):
         board = []
-        column_labels = list(' ABCDEFGH')
-#         column_labels = [' '] + [str(i) for i in range(1,9)]
-        for i in range(1, 9):
-            row = [i]
+        column_labels = list('ABCDEFGH')
+        fg = lambda text, color: "\33[38;5;" + str(color) + "m" + text + "\33[0m"
+        bg = lambda text, color: "\33[48;5;" + str(color) + "m" + text + "\33[0m"
+        for i in range(8, 0, -1):
+            row = ""
             for j in range(1, 9):
+                # Determine background color based on position for the checkered pattern
+                if (i + j) % 2 == 0:
+                    background_color = 208  # Use black for even-positioned squares
+                else:
+                    background_color = 255  # Use white for odd-positioned squares
+
                 tile = self.get_tile(str(i) + str(j))
                 if tile.is_occupied():
-                    row.append(tile.piece.symbol)
+                    # Apply background color to the entire square including text space for pieces
+                    if tile.piece.color == 'white':
+                        text = f" {self.PIECES.get(tile.piece.symbol)} "
+                    else:
+                        text = f" {self.PIECES.get(tile.piece.symbol.lower())} "
                 else:
-                    row.append(' ')
-            board.append(row)
+                    text = " " * 3  # Space for squares without pieces
 
-        board = board[::-1]
-        table = tabulate(board, headers=column_labels, tablefmt='fancy_grid')
-        print(table)
+                # Apply background color to the entire square
+                colored_text = fg(bg(text, background_color), 0)
+                row += colored_text
+            
+            print(i, row)
+        print("   " + "  ".join(column_labels))
 
     def get_possible_moves(self, player):
         possible_moves = []
@@ -267,7 +310,7 @@ class Game:
         is_kings_kissing = self.is_kings_neighbor()
 
         # Putting all rules together
-        combined_rule_check = (not in_check) and (not is_kings_kissing)
+        combined_rule_check = in_check or is_kings_kissing
 
         start.occupy(piece)
         end.occupy(temp_piece)
@@ -279,13 +322,14 @@ class Game:
             elif piece.color == 'black':
                 self.black_king_position = start.position
                 
-        return combined_rule_check
+        return not combined_rule_check
 
     # This function will decide if the player is under check 
     def is_check(self, player):
         self.player_opposite = 'black' if self.player == 'white' else 'white'
         possible_moves_opposite = self.get_possible_moves(self.player_opposite)
         king_position = self.track_king(self.player)[0]
+
         # If king is in a position that opponent threats
         for idx in possible_moves_opposite: # Try to make this self and remove upper line
             if king_position == idx[1]:
@@ -341,7 +385,7 @@ class Game:
             else:
                 return False
         
-        # Check if en_passant is attempted
+        # Check for en passant
         elif isinstance(piece, Pawn) and abs(int(start[1]) - int(end[1])) == 1 and not end_tile.is_occupied():
             if self.en_passant_capture(start, end)[0]:
                 captured_tile = self.en_passant_capture(start, end)[1]
@@ -349,9 +393,16 @@ class Game:
                 captured_tile.leave()
                 end_tile.occupy(piece)
                     
+        # Check for pawn promotion
+        elif isinstance(piece, Pawn) and (end_tile.position[0] in ['1', '8']):
+            promoted_piece = self.promote_pawn(piece)
+            start_tile.leave()
+            end_tile.occupy(promoted_piece)
+
         elif not self.is_legal_move(start, end):
             print('Illegal move')
             return False
+        
         else:
             start_tile.leave()
             end_tile.occupy(piece)
@@ -374,12 +425,53 @@ class Game:
             if start == '88':
                 self.rook88_has_moved = True
 
-        # Check for pawn promotion
-        elif isinstance(piece, Pawn) and (end_tile.position[0] in ('1', '8')):
-            piece = self.promote_pawn(piece)
-            end_tile.occupy(piece)
-
         return True
+    
+    def simulate_move(self, start, end):
+        start_tile = self.get_tile(start)
+        end_tile = self.get_tile(end)
+        piece = start_tile.piece
+        
+        if not start_tile.is_occupied():
+            return False
+
+        # Check if castling is attempted
+        if isinstance(start_tile.piece, King) and abs(int(start[1]) - int(end[1])) == 2:
+            if self.castle(start, end)[0]:
+                rook_start_tile, rook_end_tile = self.castle(start, end)[1:3]
+                # Move the King
+                king = start_tile.piece
+                start_tile.leave()
+                end_tile.occupy(king)
+
+                # Move the rooks
+                rook = rook_start_tile.piece
+                rook_start_tile.leave()
+                rook_end_tile.occupy(rook)
+            else:
+                return False
+        
+        # Check for en passant
+        elif isinstance(piece, Pawn) and abs(int(start[1]) - int(end[1])) == 1 and not end_tile.is_occupied():
+            if self.en_passant_capture(start, end)[0]:
+                captured_tile = self.en_passant_capture(start, end)[1]
+                start_tile.leave()
+                captured_tile.leave()
+                end_tile.occupy(piece)
+                    
+        # Check for pawn promotion
+        elif isinstance(piece, Pawn) and (end_tile.position[0] in ['1', '8']):
+            promoted_piece = self.promote_pawn(piece)
+            start_tile.leave()
+            end_tile.occupy(promoted_piece)
+
+        elif not self.is_legal_move(start, end):
+            print('Illegal move')
+            return False
+        
+        else:
+            start_tile.leave()
+            end_tile.occupy(piece)
     
     # This function takes the move and converts it into standart notation with the help of coordinate function
     def get_notation(self, piece, start, end):
@@ -425,6 +517,7 @@ class Game:
                       Bishop
                       Knight: ''')
         color = pawn.color
+        color = 'white' if color == 'black' else 'black'  # somewhere the colors get swapped
         if promote_to.lower() == 'queen':
             return Queen(color)
         elif promote_to.lower() == 'rook':
@@ -455,16 +548,13 @@ class Game:
         end_tile = self.get_tile(end)
         
         if isinstance(start_tile.piece, King) and abs(int(start[1]) - int(end[1])) == 2 and start[0] == end[0]:
-
             if self.is_check(start_tile.piece.color):
                 return [False]
             if start_tile.piece.color == 'white' and self.white_has_castled:
                 return [False]
             elif start_tile.piece.color == 'black' and self.black_has_castled:
                 return [False]
-            
-            self.legal_moves_opposite = self.get_possible_moves(self.player_opposite)  # Better to put this line in a previous function
-            # print(self.legal_moves_opposite)
+
             if end[1] == '7':
                 # Check if the corresponding rook has moved
                 if ((not self.rook18_has_moved and start_tile.piece.color == 'white') or \
@@ -480,7 +570,6 @@ class Game:
                     rook_start_tile = self.get_tile(f'{end[0]}8')  # Adjust for the Rook's position
                     rook_end_tile = self.get_tile(f'{end[0]}6')
                     return [True, rook_start_tile, rook_end_tile]
-
             elif end[1] == '3':
                 if ((not self.rook11_has_moved and start_tile.piece.color == 'white') or \
                 (not self.rook81_has_moved and start_tile.piece.color == 'black')) and isinstance(self.get_tile(f'{end[0]}1').piece, Rook):
@@ -504,41 +593,68 @@ class Game:
         return [False]
     
     def find_checkmate_in1(self):
+        notations = []
         for move in self.legal_moves:
-            start_time = time()
+            # import pdb; pdb.set_trace()
             start_tile = self.get_tile(move[0])
             end_tile = self.get_tile(move[1])
             temp_piece = end_tile.piece
+            piece = start_tile.piece
+            color = piece.color
+            # opp_color = 'black' if color == 'white' else 'white'
 
-            self.move(move[0], move[1])
-            self.legal_moves_opposite = self.get_legal_moves(self.player_opposite)
+            # Adding extra condition for promotion of a pawn 
+            if move[1][0] in ['1', '8'] and isinstance(piece, Pawn):
+                for promoted_piece in [Knight, Bishop, Rook, Queen]:
+                    self.player = 'black' if self.round_count % 2 else 'white' # whenever get_legal_moves func is called, colors swap
+                    self.player_opposite = 'black' if self.player == 'white' else 'white'
+                    end_tile.occupy(promoted_piece(self.player))
+                    if self.get_tile(move[1]).piece.color != self.player:
+                        end_tile.leave()
+                        continue
+                    start_tile.leave()
+                    prom_piece = end_tile.piece
+                    self.legal_moves_opposite = self.get_legal_moves(self.player_opposite)
+                    start_tile.occupy(Pawn(self.player))
+                    end_tile.leave()
+                    end_tile.occupy(temp_piece)
+                    if not self.legal_moves_opposite:
+                        notation = self.get_notation(start_tile.piece, start_tile, end_tile)
+                        notation += f'={prom_piece.symbol}' 
+                        notations.append(notation)
+                continue
+            # Adding extra condition for castling
+            # elif isinstance(piece, King) and abs(int(move[0][1]) - int(move[1][1])) == 2:
+            #     self.simulate_move(move[0], move[1])
+            #     self.print_board()
 
-            if not self.legal_moves_opposite: # If the opponent has no moves it's checkmate
-                start_tile.occupy(end_tile.piece)
+            else:
+                self.simulate_move(move[0], move[1])
+                self.legal_moves_opposite = self.get_legal_moves(self.player_opposite)
+
+                if isinstance(piece, King) and abs(int(move[0][1]) - int(move[1][1])) == 2:
+                    # import pdb; pdb.set_trace()
+                    self.legal_moves_opposite = self.get_legal_moves(self.player_opposite)
+                    # self.player = 'black' if self.round_count % 2 else 'white'
+                    # self.player_opposite = 'black' if self.player == 'white' else 'white' 
+                    rook_start_tile = self.get_tile('11')
+                    rook_end_tile = self.get_tile(f'{move[0][0]}{(int(move[1][1]) + int(move[0][1]))//2}')
+                    rook_end_tile.leave()
+                    rook_start_tile.occupy(Rook(self.player_opposite))
+                    
+
+                if not self.legal_moves_opposite and self.is_check(self.player_opposite): # If the opponent has no moves it's checkmate
+                    start_tile.occupy(end_tile.piece)
+                    end_tile.leave()
+                    end_tile.occupy(temp_piece)
+                    notation = self.get_notation(start_tile.piece, start_tile, end_tile)
+                    notations.append(notation)
+                    continue
+                
+                start_tile.occupy(piece)
                 end_tile.leave()
                 end_tile.occupy(temp_piece)
-                notation = self.get_notation(start_tile.piece, start_tile, end_tile)
-                return notation
-            
-            start_tile.occupy(end_tile.piece)
-            end_tile.leave()
-            end_tile.occupy(temp_piece)
-        else:
-            return False
-        
-    def test(self):
-        time1 = time()
-        for i in range(30):
-            self.setup_board()
-            a, b, c, d = self.get_legal_moves_improved()
-        print(f"--- {time() - time1} seconds ---")
-
-        time2 = time()
-        for i in range(30):
-            self.setup_board()
-            a, b = self.get_legal_moves_notation('white')
-            c, d = self.get_legal_moves_notation('black')
-        print(f"--- {time() - time2} seconds ---")
+        return notations
 
     # This function will do the necessary print statements and get the user input to make the run function shorter
     def handle_setup(self):
@@ -566,10 +682,13 @@ class Game:
             print('Check!')
         
         # Print if there's checkmate in one
-        start_time = time()
-        if self.find_checkmate_in1():
-            print(f'checkmate in 1 move has found: {self.find_checkmate_in1()}')
-        print(f"--- {time() - start_time} seconds ---")
+        # start_time = time()
+        is_checkmate_in1 = self.find_checkmate_in1()
+        if is_checkmate_in1:
+            print(f'{len(is_checkmate_in1)} checkmate in 1 move has found: {','.join(is_checkmate_in1)}')
+        # print(f"--- {time() - start_time} seconds ---")
+        self.player = 'black' if self.round_count % 2 else 'white'
+        self.player_opposite = 'black' if self.player == 'white' else 'white'
 
         user_move = input('Make your move: ').strip().upper()
         
@@ -593,7 +712,6 @@ Welcome to the chess game! To make a move you have 3 options:
 2- Use locations as (row, column). For example in the beginning NF3 would be '17 36' referring to the piece at 17 goes to 36. 
 3- Use locations as (letter, row). For example in the beginning NF3 would be 'G1 F3' referring to the piece at G1 goes to F3''')
         self.setup_board()
-        # self.setup_board_checkmate2()
         self.round_count = 0
 
         while True:
