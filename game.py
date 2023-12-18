@@ -6,6 +6,7 @@ import timeit
 # from IPython.display import display, Image
 '''
 current problems: 
+- 
 1- legal moves get called after calling castle function. therefore there may be illegal castling moves (but not playable)
 2- get legal moves swaps colors
 
@@ -88,6 +89,7 @@ class Game:
         self.get_tile('25').occupy(Rook('white'))
         self.get_tile('23').occupy(Rook('white'))
         self.get_tile('11').occupy(Rook('white'))
+        # self.get_tile('14').occupy(Rook('black'))
 
     def setup_board_pawn(self):
         self.get_tile('15').occupy(King('white'))
@@ -182,7 +184,6 @@ class Game:
                         end_tile = self.get_tile(end)
                         if piece.move(start_tile, end_tile, self):
                             pos_mw.append((start, end)) if color == 'white' else pos_mb.append((start, end))
-                            # print(f'end squares for {start} is {end}')
         return pos_mw, pos_mb
     
     def get_legal_moves_improved(self):
@@ -194,7 +195,6 @@ class Game:
         for move in pos_mw:
             if self.is_legal_move(move[0], move[1]):
                 legal_mw.append(move)
-                # This 5 lines are for appending notation, not so necessary
                 start_tile = self.get_tile(move[0])
                 end_tile = self.get_tile(move[1])
                 piece = start_tile.piece
@@ -263,7 +263,7 @@ class Game:
 
         # Check if en passant capture is possible
         elif isinstance(piece, Pawn) and abs(int(start[1]) - int(end[1])) == 1 and not end_tile.is_occupied():
-            if not self.en_passant_capture(start, end)[0]:
+            if not self.en_passant_capture(start, end):
                 return False
             
         # Simulate the move
@@ -355,8 +355,8 @@ class Game:
         
         # Check for en passant
         elif isinstance(piece, Pawn) and abs(int(start[1]) - int(end[1])) == 1 and not end_tile.is_occupied():
-            if self.en_passant_capture(start, end)[0]:
-                captured_tile = self.en_passant_capture(start, end)[1]
+            if self.en_passant_capture(start, end):
+                captured_tile = self.get_tile(f'{start[0]}{end[1]}')
                 start_tile.leave()
                 captured_tile.leave()
                 end_tile.occupy(piece)
@@ -413,8 +413,8 @@ class Game:
         
         # Check for en passant
         elif isinstance(piece, Pawn) and abs(int(start[1]) - int(end[1])) == 1 and not end_tile.is_occupied():
-            if self.en_passant_capture(start, end)[0]:
-                captured_tile = self.en_passant_capture(start, end)[1]
+            if self.en_passant_capture(start, end):
+                captured_tile = self.get_tile(f'{start[0]}{end[1]}')
                 start_tile.leave()
                 captured_tile.leave()
                 end_tile.occupy(piece)
@@ -435,22 +435,48 @@ class Game:
             # Update position of kings, if they have moved
             if isinstance(piece, King):
                 self.update_king_position(start, end)
+
+    def simulate_move_reverse(self, piece, temp_piece, start, end):
+        for move in self.legal_moves:
+            start_tile = self.get_tile(start)
+            end_tile = self.get_tile(end)
+            color = piece.color
+            opp_color = 'black' if color == 'white' else 'white'
+
+            # Adding extra condition for promotion of a pawn 
+            if end[0] in ['1', '8'] and isinstance(piece, Pawn):
+                start_tile.occupy(Pawn(color))
+                end_tile.leave()
+                end_tile.occupy(temp_piece)
+                continue
+            
+            # Adding extra condition for castling
+            elif isinstance(piece, King) and abs(int(start[1]) - int(end[1])) == 2:
+                rook_start_tile = self.get_tile(f'{start[0]}1') if end[1] == '3' else self.get_tile(f'{start[0]}8')
+                rook_end_tile = self.get_tile(f'{start[0]}{(int(end[1]) + int(start[1]))//2}')
+                rook_end_tile.leave()
+                rook_start_tile.occupy(Rook(color))
+                
+            start_tile.occupy(piece)
+            end_tile.leave()
+            end_tile.occupy(temp_piece)
+        return
     
     # This function takes the move and converts it into standart notation with the help of coordinate function
     def get_notation(self, piece, start, end):
-        start_new = self.coordinate(start.position)
-        end_new = self.coordinate(end.position)
+        start_not = self.coordinate(start.position)
+        end_not = self.coordinate(end.position)
 
         if end.is_occupied(): #capturing a piece
-            notation = f'{piece.symbol}x{end_new}'
+            notation = f'{piece.symbol}x{end_not}'
             if isinstance(piece, Pawn):
-                notation = start_new[0] + notation[1:]
+                notation = start_not[0] + notation[1:]
         else:
-            notation = f'{piece.symbol}{end_new}'
+            notation = f'{piece.symbol}{end_not}'
             if isinstance(piece, Pawn):
                 notation = notation[1:]
-                if start_new[0] != end_new[0]: # If the move was en passant
-                    notation = f'{start_new[0]}x{end_new}'
+                if start_not[0] != end_not[0]: # If the move was en passant
+                    notation = f'{start_not[0]}x{end_not}'
 
         return notation
 
@@ -499,10 +525,8 @@ class Game:
         captured_pawn = captured_tile.piece
         # Check if the previous move fits to an en passant move
         if isinstance(captured_pawn, Pawn) and abs(int(prev_start[0]) - int(prev_end[0])) == 2 and end[1] == prev_end[1]:
-            # if start == '42': 
-            # import pdb;pdb.set_trace()
-            return [True, captured_tile]
-        return [False]
+            return True
+        return False
     
 
     def castle(self, start, end):
@@ -527,7 +551,7 @@ class Game:
                     middle_square = middle_tile.position
                     if middle_tile.is_occupied():
                         return [False]
-                    for move in self.legal_moves_opposite: # should be opposite
+                    for move in self.legal_moves_opposite:
                         if move[1] == middle_square or move[1] == end:
                             return [False]
                     rook_end_tile = middle_tile
@@ -541,8 +565,11 @@ class Game:
         for move in self.legal_moves:
             start_tile = self.get_tile(move[0])
             end_tile = self.get_tile(move[1])
-            temp_piece = end_tile.piece
             piece = start_tile.piece
+            temp_piece = end_tile.piece
+            # put extra condition for en passant since temp_piece is different
+            if isinstance(piece, Pawn) and abs(int(move[0][1]) - int(move[1][1])) == 1 and not end_tile.is_occupied():
+                temp_piece = self.get_tile(f'{move[0][0]}{move[1][1]}').piece
             color = piece.color
             opp_color = 'black' if color == 'white' else 'white'
 
@@ -550,62 +577,26 @@ class Game:
             if move[1][0] in ['1', '8'] and isinstance(piece, Pawn):
                 for promoted_piece in [Knight, Bishop, Rook, Queen]:
                     end_tile.occupy(promoted_piece(color))
-                    if self.get_tile(move[1]).piece.color != color:
-                        end_tile.leave()
-                        continue
                     start_tile.leave()
                     prom_piece = end_tile.piece
+                    is_check = self.is_check(opp_color)
                     self.legal_moves_opposite = self.get_legal_moves(opp_color)
                     start_tile.occupy(Pawn(color))
                     end_tile.leave()
                     end_tile.occupy(temp_piece)
-                    if not self.legal_moves_opposite:
-                        notation = self.get_notation(start_tile.piece, start_tile, end_tile)
+                    if not self.legal_moves_opposite and is_check:
+                        notation = self.get_notation(piece, start_tile, end_tile)
                         notation += f'={prom_piece.symbol}' 
                         notations.append(notation)
                 continue
-            
-            # Adding extra condition for castling
-            elif isinstance(piece, King) and abs(int(move[0][1]) - int(move[1][1])) == 2:
-                notation = self.get_notation(start_tile.piece, start_tile, end_tile)
+            else:
+                notation = self.get_notation(piece, start_tile, end_tile)
                 self.simulate_move(move[0], move[1])
                 self.legal_moves_opposite = self.get_legal_moves(opp_color)
                 is_check = self.is_check(opp_color)
-
-                rook_start_tile = self.get_tile(f'{move[0][0]}1') if move[1][1] == '3' else self.get_tile(f'{move[0][0]}8')
-                rook_end_tile = self.get_tile(f'{move[0][0]}{(int(move[1][1]) + int(move[0][1]))//2}')
-                rook_end_tile.leave()
-                rook_start_tile.occupy(Rook(color))
                 if not self.legal_moves_opposite and is_check:
                     notations.append(notation)
-
-            # Adding extra condition for en passant capture
-            elif isinstance(piece, Pawn) and abs(int(move[0][1]) - int(move[1][1])) == 1 and not end_tile.is_occupied():
-                notation = self.get_notation(start_tile.piece, start_tile, end_tile)
-                self.simulate_move(move[0], move[1])
-                self.legal_moves_opposite = self.get_legal_moves(opp_color)
-                is_check = self.is_check(opp_color)
-                
-                if color == 'white':
-                    captured_pawn = self.get_tile(f'{str(int(move[1][0])-1)}{move[1][1]}') 
-                else:
-                    captured_pawn = self.get_tile(f'{str(int(move[1][0])+1)}{move[1][1]}') 
-                captured_pawn.occupy(Pawn(opp_color))
-            else:
-                self.simulate_move(move[0], move[1])
-                self.legal_moves_opposite = self.get_legal_moves(opp_color)
-
-                if not self.legal_moves_opposite and self.is_check(opp_color): # If the opponent has no moves it's checkmate
-                    start_tile.occupy(end_tile.piece)
-                    end_tile.leave()
-                    end_tile.occupy(temp_piece)
-                    notation = self.get_notation(start_tile.piece, start_tile, end_tile)
-                    notations.append(notation)
-                    continue
-                
-            start_tile.occupy(piece)
-            end_tile.leave()
-            end_tile.occupy(temp_piece)
+                self.simulate_move_reverse(piece, temp_piece, move[0], move[1])
         return notations
 
     # This function will do the necessary print statements and get the user input to make the run function shorter
@@ -622,7 +613,6 @@ class Game:
         print(f"There are {len(self.legal_mb)} moves for black. Legal moves are: {','.join(self.legal_mb_not)}")
         print(f'Turn for {self.player}')
 
-        # Printing the board and starting with first move
         self.print_board()
 
         # if it's checkmate or stalemate (there are no legal moves), the game ends
@@ -645,6 +635,7 @@ class Game:
         self.player = 'black' if self.round_count % 2 else 'white'
         self.player_opposite = 'black' if self.player == 'white' else 'white'
 
+        # Get the current player's move
         user_move = input('Make your move: ').strip().upper()
         
         if len(user_move) > 1 and user_move[1] == 'X':
@@ -666,7 +657,7 @@ Welcome to the chess game! To make a move you have 3 options:
 1- Use the chess notation (without +, ++, =, o-o, o-o-o)
 2- Use locations as (row, column). For example in the beginning NF3 would be '17 36' referring to the piece at 17 goes to 36. 
 3- Use locations as (letter, row). For example in the beginning NF3 would be 'G1 F3' referring to the piece at G1 goes to F3''')
-        self.setup_board_castle()
+        self.setup_board_pawn()
         self.round_count = 0
 
         while True:
@@ -803,7 +794,7 @@ class Pawn(Piece):
                 return True
             
             # Check for en passant
-            if abs(col_diff) == 1 and row_diff == self.direction and not end_tile.is_occupied():
+            if abs(col_diff) == 1 and row_diff == self.direction:
                 if self.direction * start_row in [5, -4]:  # Check if the pawn is at 5th(for white) or 4th(for black) row
                     if game.en_passant_capture(start_tile.position, end_tile.position):
                         return False
