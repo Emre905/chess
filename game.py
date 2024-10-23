@@ -2,8 +2,8 @@ import itertools as it
 import numpy as np
 from time import time
 import timeit 
-# import matplotlib.pyplot as plt 
-# from IPython.display import display, Image
+
+
 '''
 current problems: 
 - 
@@ -54,7 +54,7 @@ class Game:
                 row.append(Tile(f'{coll}{roww}'))
             self.tiles.append(row)
 
-
+    # Define classic board set-up
     def setup_board(self):
         # Place pawns
         for col in range(1, 9):
@@ -69,6 +69,8 @@ class Game:
             self.get_tile(f'1{col}').occupy(eval(piece)("white"))
             self.get_tile(f'8{col}').occupy(eval(piece)("black"))
 
+
+    # Define test set-ups for different cases
     def setup_board_check(self):
         self.get_tile('55').occupy(King('white'))
         self.get_tile('67').occupy(King('black'))
@@ -124,6 +126,7 @@ class Game:
         self.get_tile('24').occupy(Pawn('white'))
         self.get_tile('25').occupy(Pawn('white'))
 
+    # Print the board
     def print_board(self):
         board = []
         column_labels = list('ABCDEFGH')
@@ -657,7 +660,7 @@ Welcome to the chess game! To make a move you have 3 options:
 1- Use the chess notation (without +, ++, =, o-o, o-o-o)
 2- Use locations as (row, column). For example in the beginning NF3 would be '17 36' referring to the piece at 17 goes to 36. 
 3- Use locations as (letter, row). For example in the beginning NF3 would be 'G1 F3' referring to the piece at G1 goes to F3''')
-        self.setup_board_pawn()
+        self.setup_board()
         self.round_count = 0
 
         while True:
@@ -695,44 +698,7 @@ Welcome to the chess game! To make a move you have 3 options:
                 continue
 
 
-    def print_evaluation_score(self):
-            white_score, black_score = self.evaluate_board()
-            # Calculate the proportions
-            total = white_score + black_score
-            white_score_proportion = white_score / total
-            black_score_proportion = black_score / total
-
-            # Create a bar chart with stacked bars
-            plt.figure(figsize=(1, 5))
-
-            # Plot the white
-            plt.bar(0, white_score_proportion, color='white')
-
-            # Plot the second value on top of the first with another color
-            plt.bar(0, black_score_proportion, bottom=white_score_proportion, color='black')
-
-            # Remove y-axis ticks and label
-            plt.xticks([])
-            plt.xlabel('')
-            # Set axis limits
-            plt.ylim(0, 1)
-            plt.xlim(0, 0.3)
-
-            plt.show()
-            # Convert the plot to an image
-            # plt.savefig('plot.png', bbox_inches='tight')
-
-            # Display the image
-            # display(Image('plot.png'))
-
-    def print_board_as_png(self):
-        # table = self.print_board()
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, table, ha='center', va='center', fontsize=12)
-        ax.axis('off')
-        plt.savefig('printed_board.png')
-        plt.show()
-
+# Tile class for squares on the board
 class Tile:
     def __init__(self, position) -> None:
         self.position = position 
@@ -752,6 +718,7 @@ class Tile:
         self.piece = None
 
 
+# Piece class for pieces
 class Piece:
     def __init__(self, color) -> None:
         self.color = color
@@ -769,7 +736,7 @@ class Piece:
     def __str__(self):
         return f'{self.__class__.__name__}'
 
-    
+# Define each piece with their possible moves    
 class Pawn(Piece):
     def __init__(self, color) -> None:
         super().__init__(color)
