@@ -17,7 +17,7 @@ to improve:
 
 to add:
 - evaluator
-- all notations (no need I guess)
+- all notations (optional)
 ''' 
 
 class Game:
@@ -612,7 +612,7 @@ class Game:
         self.legal_moves = self.legal_mw if self.player == 'white' else self.legal_mb
         self.legal_moves_notation = self.legal_mw_not if self.player == 'white' else self.legal_mb_not
 
-        print(f"There are {len(self.legal_mw)} moves for white. Legal moves are: {','.join(self.legal_mw_not)}") 
+        print(f"\nThere are {len(self.legal_mw)} moves for white. Legal moves are: {','.join(self.legal_mw_not)}") 
         print(f"There are {len(self.legal_mb)} moves for black. Legal moves are: {','.join(self.legal_mb_not)}")
         print(f'Turn for {self.player}')
 
